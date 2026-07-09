@@ -1,0 +1,26 @@
+[project]
+name = "deepscan-mcp"
+version = "0.1.0"
+description = "Deep Scan MCP server - expose the scanner library to agents and IDEs"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "deepscan-core",
+    "deepscan-jobs",
+    "mcp[cli]>=1.15.0",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+deepscan-mcp = "deepscan_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deepscan_mcp"]
+
+[tool.uv.sources]
+deepscan-core = { workspace = true }
+deepscan-jobs = { workspace = true }

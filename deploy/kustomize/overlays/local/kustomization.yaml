@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Local dev (kind/minikube): single worker, admin reachable on a NodePort.
+resources:
+  - ../../base
+
+patches:
+  - target: { kind: Deployment, name: deepscan-kruncher }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: Service, name: deepscan-admin }
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30090
+
+images:
+  - name: kubeek-sec/deepscan
+    newTag: dev

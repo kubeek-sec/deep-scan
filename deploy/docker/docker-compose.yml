@@ -1,0 +1,309 @@
+# Deep Scan kruncher - local / single-host deployment.
+#
+#   docker compose -f deploy/docker/docker-compose.yml up --build
+#   docker compose -f deploy/docker/docker-compose.yml up --scale kruncher=4   # scale workers
+#
+# Roles share one image; the `command` selects the role. Postgres is the queue
+# (FOR UPDATE SKIP LOCKED) and the result store, so there is no separate broker.
+name: deepscan
+
+x-app-image: &app-image
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+    args:
+      # Bake the malware-family ClamAV (OS package + virus DB), the uv-based
+      # cisco-ai-skill-scanner, and the nuclei DAST templates into the image so
+      # those scanners don't skip.
+      INSTALL_CLAMAV: "true"
+      INSTALL_CISCO_SKILL: "true"
+      INSTALL_CHECKOV: "true"
+      INSTALL_NUCLEI_TEMPLATES: "true"
+  image: kubeek-sec/deepscan:latest
+
+x-db-env: &db-env
+  DEEPSCAN_DB_HOST: postgres
+  DEEPSCAN_DB_PORT: "5432"
+  DEEPSCAN_DB_NAME: ${POSTGRES_DB:-deepscan}
+  DEEPSCAN_DB_USER: ${POSTGRES_USER:-deepscan}
+  DEEPSCAN_DB_PASSWORD: ${POSTGRES_PASSWORD:-deepscan}
+
+# Let the scanning containers reach a service running on the host - e.g. a DAST
+# target at http://host.docker.internal:<port>. Automatic on Docker Desktop; on
+# Linux it must be mapped explicitly to the host gateway. (The host server must
+# bind 0.0.0.0, not 127.0.0.1, to be reachable from the container.)
+x-host-gateway: &host-gateway
+  - "host.docker.internal:host-gateway"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-deepscan}
+      POSTGRES_USER: ${POSTGRES_USER:-deepscan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-deepscan}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deepscan} -d ${POSTGRES_DB:-deepscan}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+
+  # One-shot: wait for Postgres, create/upgrade the schema, then exit.
+  migrate:
+    <<: *app-image
+    command: ["deepscan-kruncher", "db", "init"]
+    environment:
+      <<: *db-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+
+  # One-shot: make the host scratch dir writable by the non-root worker (uid
+  # 10001). Runs as root so it can chown a bind-mounted ./data/work whatever its
+  # initial owner - this is what makes the host-dir option work without sudo.
+  # Harmless when /work is a tmpfs instead (it just prepares the empty dir).
+  prepare-scratch:
+    image: busybox:stable
+    command: ["sh", "-c", "mkdir -p /work && chown -R 10001:10001 /work && chmod 0775 /work"]
+    user: "0:0"
+    volumes:
+      - ./data/work:/work
+    restart: "no"
+    network_mode: none
+
+  # Shared Trivy server: holds the vulnerability DB so the worker fleet runs in
+  # client mode and never downloads the DB itself (one pull here, no per-worker
+  # rate limiting). Version MUST match the bundled trivy client (catalog: 0.71.0).
+  trivy-server:
+    image: aquasec/trivy:0.71.0
+    command: ["server", "--listen", "0.0.0.0:4954"]
+    volumes:
+      - trivycache:/root/.cache/trivy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:4954/healthz | grep -q ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    networks: [data, egress]   # egress: pull the DB; data: serve the workers
+
+  # The cheap half. The advisory lock makes >1 replica safe; 1 is enough.
+  scheduler:
+    <<: *app-image
+    command: ["deepscan-kruncher", "scheduler"]
+    # env_file injects EVERY var from .env into the container, so a scope using
+    # any `token_env` name (GITHUB_TOKEN, GITLAB_TOKEN, MY_PAT, …) just works -
+    # put the PAT in deploy/docker/.env. Omit it for public repos.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-env
+      DEEPSCAN_KRUNCHER_SCHEDULER_INTERVAL: "60"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [data, egress]
+
+  # The expensive half - scale this: `--scale kruncher=N`. Hardened:
+  # read-only rootfs, no new privileges, all capabilities dropped, scratch on
+  # tmpfs, bounded memory/pids. (Network egress can't be fenced in compose;
+  # use the kustomize NetworkPolicy for that - see deploy/kustomize.)
+  kruncher:
+    <<: *app-image
+    command: ["deepscan-kruncher", "worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-env
+      DEEPSCAN_KRUNCHER_MAX_ATTEMPTS: "3"
+      DEEPSCAN_KRUNCHER_WORK_DIR: /work
+      # Heavy scanner scratch (CodeQL databases, ClamAV archive unpacking, every
+      # tempfile) and self-extracting engines (opengrep) must NOT land in the
+      # tiny read-only-rootfs /tmp tmpfs - point them at the big writable /work
+      # volume instead, or scans fail with "No space left on device". (The
+      # TMPDIR subdir is created by the entrypoint; opengrep mkdir -p's its own.)
+      TMPDIR: /work/tmp
+      XDG_CACHE_HOME: /work/cache
+      # Shared data volume (reports/targets/uploads). The fleet now runs manual
+      # (API/MCP) scans too, so it must write reports here and read zip uploads
+      # the API/MCP staged - same path (/data) as the api/mcp services below.
+      DEEPSCAN_DATA_DIR: /data
+      # Scanners run over a RAM copy of the retained source for fast I/O. Point
+      # this at the sized tmpfs below (Docker's default /dev/shm is only 64 MiB).
+      # Disable with DEEPSCAN_SCAN_RAMFS=false to scan the /data copy in place.
+      DEEPSCAN_SCAN_RAMFS_DIR: /ramscan
+      # Per-scanner rule/config overrides. Defaults to <data>/config, i.e.
+      # /data/config here (host ./data/app/config/<scanner>/) - e.g. drop custom
+      # YARA at ./data/app/config/yara/*.yara or a gitleaks.toml at
+      # ./data/app/config/gitleaks/. Point DEEPSCAN_CONFIG_DIR elsewhere (e.g. a
+      # dedicated read-only mount) to keep rules separate from runtime state.
+      DEEPSCAN_CONFIG_DIR: /data/config
+      # Offload Trivy SCA vuln matching to the shared server (no DB download).
+      DEEPSCAN_TRIVY_SERVER: http://trivy-server:4954
+      # --- Optional ai-analysis triage scanner (off by default) --------------
+      # Build the image with --build-arg INSTALL_CLAUDE=true, then enable it and
+      # point it at a model. Tokens/endpoint come from .env (env_file above):
+      #   AI_ANALYSIS=true                    # turn the triage scanner on for full scans
+      #   ANTHROPIC_BASE_URL=http://192.168.1.43:1234   # e.g. LM Studio (local)
+      #   ANTHROPIC_AUTH_TOKEN=lmstudio
+      #   ANTHROPIC_MODEL=foundation-sec-8b@q8_0
+      # Or mount a settings file and set DEEPSCAN_CLAUDE_SETTINGS=/etc/claude.json
+      # (see deploy/docker/claude-settings.example.json).
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      prepare-scratch:
+        condition: service_completed_successfully
+      prepare-data:
+        condition: service_completed_successfully
+      trivy-server:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
+    mem_limit: 2g
+    # ALWAYS keep a writable /tmp: under read_only rootfs the scanner uses
+    # tempfile, which fails with "No usable temporary directory" without it.
+    # mode 1777 is required because a tmpfs is otherwise root-owned/0700 and the
+    # container runs as uid 10001.
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      # RAM-backed scratch the scanners run over (DEEPSCAN_SCAN_RAMFS_DIR above).
+      # Size it for your largest expected source tree; mode 1777 so uid 10001 can
+      # write under a read-only rootfs (like /tmp).
+      - /ramscan:size=2g,mode=1777
+    # Scratch for clones (/work). Default below: a project-local host dir so you
+    # can inspect clones. The `prepare-scratch` service chowns it to uid 10001 at
+    # startup, so no manual chmod/sudo is needed (.gitignore already excludes
+    # data/). For EPHEMERAL scratch instead, delete the volume below and add
+    # "- /work:size=2g,mode=1777" to the tmpfs list (and prepare-scratch becomes
+    # a no-op you can drop from kruncher's depends_on).
+    volumes:
+      - ./data/work:/work
+      - ./data/app:/data
+    extra_hosts: *host-gateway
+    networks: [data, egress]
+    deploy:
+      replicas: ${KRUNCHER_REPLICAS:-2}
+
+  # One-shot: make the shared data dir (reports/targets/uploads) writable by the
+  # non-root app user (uid 10001), like prepare-scratch does for /work.
+  prepare-data:
+    image: busybox:stable
+    command: ["sh", "-c", "mkdir -p /data && chown -R 10001:10001 /data && chmod 0775 /data"]
+    user: "0:0"
+    volumes:
+      - ./data/app:/data
+    restart: "no"
+    network_mode: none
+
+  # REST API + web dashboard. Shares the Postgres job store with kruncher and the
+  # MCP server; reports/uploads live on the shared /data volume so any of them can
+  # serve a report the others produced.
+  api:
+    <<: *app-image
+    command: ["deepscan-api"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-env
+      DEEPSCAN_API_HOST: 0.0.0.0
+      DEEPSCAN_API_PORT: "8800"
+      DEEPSCAN_DATA_DIR: /data
+      DEEPSCAN_TRIVY_SERVER: http://trivy-server:4954
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      prepare-data:
+        condition: service_completed_successfully
+      trivy-server:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8800}:8800"
+    volumes:
+      - ./data/app:/data
+    extra_hosts: *host-gateway
+    restart: unless-stopped
+    networks: [data, egress]
+
+  # MCP server (streamable-http) for agents/IDEs. Same Postgres store + /data
+  # volume, so scans launched by agents show up in the API dashboard. A
+  # server-side path is refused unless DEEPSCAN_MCP_ALLOW_LOCAL_PATHS=1 - agents
+  # upload the project instead (deepscan_mcp.client.upload_project → /upload).
+  mcp:
+    <<: *app-image
+    command: ["deepscan-mcp", "--transport", "streamable-http"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-env
+      FASTMCP_HOST: 0.0.0.0
+      FASTMCP_PORT: "8000"
+      # Binding to 0.0.0.0 alone is not enough: FastMCP's DNS-rebinding guard
+      # rejects any Host header it wasn't told to trust (421 Misdirected Request).
+      # List the host(s)/IP(s) clients use to reach this server (any-port "host:*"
+      # wildcard supported; comma-separated). Override in .env for your LAN/DNS.
+      DEEPSCAN_MCP_ALLOWED_HOSTS: ${DEEPSCAN_MCP_ALLOWED_HOSTS:-192.168.1.43:*}
+      DEEPSCAN_DATA_DIR: /data
+      DEEPSCAN_TRIVY_SERVER: http://trivy-server:4954
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      prepare-data:
+        condition: service_completed_successfully
+      trivy-server:
+        condition: service_healthy
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    volumes:
+      - ./data/app:/data
+    extra_hosts: *host-gateway
+    restart: unless-stopped
+    networks: [data, egress]
+
+  admin:
+    <<: *app-image
+    command: ["deepscan-kruncher-admin"]
+    # The admin can trigger discovery, which may need a token too.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *db-env
+      DEEPSCAN_ADMIN_HOST: 0.0.0.0
+      DEEPSCAN_ADMIN_PORT: "8900"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Read-only access to the shared data volume so the jobs drawer can show the
+    # findings of a manual (adhoc) job from its report.json (discovery jobs read
+    # their findings from the DB and need no volume).
+    volumes:
+      - ./data/app:/data:ro
+    ports:
+      - "${ADMIN_PORT:-8900}:8900"
+    restart: unless-stopped
+    networks: [data]
+
+volumes:
+  pgdata:
+  trivycache:   # Trivy vulnerability DB, downloaded once by trivy-server
+
+networks:
+  data:      # app <-> postgres / trivy-server
+  egress:    # app -> internet (git hosts, package registries, scanner APIs)

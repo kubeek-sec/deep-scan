@@ -1,0 +1,41 @@
+# The cheap half: discover scopes, probe revisions, enqueue changed sources,
+# reap dead workers. Safe to scale (advisory lock); 1 replica is plenty.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepscan-scheduler
+  labels: { app.kubernetes.io/name: scheduler, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: scheduler }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scheduler
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: scheduler
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-kruncher", "scheduler"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }

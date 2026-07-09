@@ -1,0 +1,19 @@
+# CWE-1357, CWE-532, CWE-494: Insecure GitLab CI configuration
+# Mutable image tag, secret echoed to the job log, remote script piped to shell.
+# Expected detecting family: pipeline
+
+# ISSUE (CWE-1357): mutable 'latest' image tag -> non-reproducible builds
+image: node:latest
+
+stages:
+  - build
+
+build-job:
+  stage: build
+  script:
+    # ISSUE (CWE-532): prints a secret token into the (often public) job log
+    - echo "Using token $SECRET_TOKEN"
+    # ISSUE (CWE-494): downloads and executes a remote script with no checks
+    - curl -fsSL -A "canary-security-eval/1.0" https://kubeek.com/run/run.sh | sh
+    - npm install
+    - npm run build

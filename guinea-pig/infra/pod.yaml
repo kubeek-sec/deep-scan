@@ -1,0 +1,27 @@
+# CWE-250, CWE-668, CWE-732: Insecure Kubernetes Pod spec
+# Privileged container, host network, host root filesystem mount, runs as root.
+# Expected detecting family: iac
+apiVersion: v1
+kind: Pod
+metadata:
+  name: guinea-pig-pod
+spec:
+  # ISSUE (CWE-668): shares the host network namespace
+  hostNetwork: true
+  containers:
+    - name: app
+      image: nginx:latest
+      securityContext:
+        # ISSUE (CWE-250): full privileged container -> host escape
+        privileged: true
+        # ISSUE (CWE-250): runs as the root user
+        runAsUser: 0
+        allowPrivilegeEscalation: true
+      volumeMounts:
+        - name: host-root
+          mountPath: /host
+  volumes:
+    # ISSUE (CWE-732/CWE-22): mounts the entire host root filesystem
+    - name: host-root
+      hostPath:
+        path: /

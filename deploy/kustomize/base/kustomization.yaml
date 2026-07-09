@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: deepscan
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: deepscan
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - config.yaml
+  - postgres.yaml
+  - trivy-server.yaml
+  - migrate-job.yaml
+  - scheduler.yaml
+  - kruncher.yaml
+  - admin.yaml
+  - networkpolicy.yaml
+  # kruncher-ephemeral-job.template.yaml is intentionally NOT listed:
+  # it is a per-scan template, created on demand, not a standing resource.
+
+# The DB password + connector tokens (referenced by each scope's token_env) are
+# generated into Secret/deepscan-secrets from secrets.env. Seed it from your
+# docker compose .env if you like - same GITHUB_TOKEN / GITLAB_TOKEN names.
+secretGenerator:
+  - name: deepscan-secrets
+    envs:
+      - secrets.env
+    options:
+      disableNameSuffixHash: true
+
+images:
+  - name: kubeek-sec/deepscan
+    newTag: latest

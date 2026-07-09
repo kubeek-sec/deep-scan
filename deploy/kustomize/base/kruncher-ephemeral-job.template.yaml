@@ -1,0 +1,67 @@
+# Ephemeral runner - the strongest isolation option: ONE throwaway pod per scan.
+#
+# This is a TEMPLATE, not applied by the kustomization. Use it when a scan may
+# touch hostile content and you want a fresh, locked-down sandbox each time.
+# Create one per queued job (e.g. from a small dispatcher, an Argo Workflow, or
+# `kubectl create -f` in a loop). The pod runs exactly one job and exits:
+#
+#   deepscan-kruncher run-one   # claim one job, process it, exit
+#
+# It inherits the egress fence via the `deepscan/egress` label and adds: no
+# service-account token, read-only rootfs, all caps dropped, RuntimeDefault
+# seccomp, tight CPU/mem/ephemeral-storage limits, an activeDeadline, and a
+# short TTL so finished pods are reaped.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: deepscan-scan-
+  labels: { app.kubernetes.io/name: kruncher-ephemeral, app.kubernetes.io/part-of: deepscan }
+spec:
+  backoffLimit: 0            # retries are owned by the queue, not the Job
+  ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kruncher-ephemeral
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: runner
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-kruncher", "run-one"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }
+          env:
+            - name: DEEPSCAN_KRUNCHER_WORK_DIR
+              value: /work
+            # Scanners run over a RAM copy of the source (in-memory emptyDir below).
+            - name: DEEPSCAN_SCAN_RAMFS_DIR
+              value: /ramscan
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi", ephemeral-storage: "4Gi" }
+          volumeMounts:
+            - { name: work, mountPath: /work }
+            - { name: tmp, mountPath: /tmp }
+            - { name: ramscan, mountPath: /ramscan }
+      volumes:
+        - name: work
+          emptyDir: { sizeLimit: 4Gi }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+        - name: ramscan
+          emptyDir: { medium: Memory, sizeLimit: 2Gi }

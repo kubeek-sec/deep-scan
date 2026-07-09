@@ -1,0 +1,18 @@
+# Non-secret connection settings shared by every role.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deepscan-config
+data:
+  DEEPSCAN_DB_HOST: "postgres"
+  DEEPSCAN_DB_PORT: "5432"
+  DEEPSCAN_DB_NAME: "deepscan"
+  DEEPSCAN_DB_USER: "deepscan"
+  DEEPSCAN_KRUNCHER_MAX_ATTEMPTS: "3"
+  DEEPSCAN_KRUNCHER_SCHEDULER_INTERVAL: "60"
+  DEEPSCAN_KRUNCHER_LEASE_SECONDS: "1800"
+  DEEPSCAN_WAIT_FOR_DB: "true"
+  # Trivy client/server mode: workers offload vuln matching here, no DB download.
+  DEEPSCAN_TRIVY_SERVER: "http://trivy-server:4954"
+# The `deepscan-secrets` Secret (DB password + connector tokens) is built by the
+# kustomization's secretGenerator from base/secrets.env - see that file.

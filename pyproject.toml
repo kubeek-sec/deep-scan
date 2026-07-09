@@ -1,0 +1,55 @@
+[project]
+name = "deep-scan"
+version = "0.1.0"
+description = "Deep Scan - modular security scanning monorepo: core scanner library, MCP server, CLI, REST API and web app"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = [
+    "deepscan-core",
+    "deepscan-graphoofy",
+    "deepscan-jobs",
+    "deepscan-mcp",
+    "deepscan-cli",
+    "deepscan-api",
+    "deepscan-input-connector-base",
+    "deepscan-input-connector-github",
+    "deepscan-input-connector-gitlab",
+    "deepscan-input-connector-directory",
+    "deepscan-input-connector-git",
+    "deepscan-kruncher",
+    "deepscan-kruncher-admin",
+]
+
+[tool.uv.workspace]
+members = ["packages/*", "packages/connectors/*"]
+exclude = ["packages/connectors"]  # the parent dir is not itself a package
+
+[tool.uv.sources]
+deepscan-core = { workspace = true }
+deepscan-graphoofy = { workspace = true }
+deepscan-jobs = { workspace = true }
+deepscan-mcp = { workspace = true }
+deepscan-cli = { workspace = true }
+deepscan-api = { workspace = true }
+deepscan-input-connector-base = { workspace = true }
+deepscan-input-connector-github = { workspace = true }
+deepscan-input-connector-gitlab = { workspace = true }
+deepscan-input-connector-directory = { workspace = true }
+deepscan-input-connector-git = { workspace = true }
+deepscan-kruncher = { workspace = true }
+deepscan-kruncher-admin = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+    "pytest-playwright>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["inspiration", ".venv", "guinea-pig", "reports", "deploy"]
+asyncio_mode = "auto"

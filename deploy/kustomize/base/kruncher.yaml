@@ -1,0 +1,75 @@
+# The expensive half: claim jobs, clone/copy, scan, persist. Scale this
+# Deployment for throughput (or add an HPA). Hardened: non-root, read-only
+# rootfs, all caps dropped, scratch on a sized emptyDir, no service-account
+# token. Network egress is fenced by networkpolicy.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepscan-kruncher
+  labels: { app.kubernetes.io/name: kruncher, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app.kubernetes.io/name: kruncher }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kruncher
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: kruncher
+          image: kubeek-sec/deepscan:latest
+          # Go through the image entrypoint (k8s `command` would otherwise
+          # bypass it) so TMPDIR / XDG_CACHE_HOME get created before the worker.
+          command: ["/usr/local/bin/entrypoint.sh"]
+          args: ["deepscan-kruncher", "worker"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }
+          env:
+            - name: DEEPSCAN_KRUNCHER_ID
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: DEEPSCAN_KRUNCHER_WORK_DIR
+              value: /work
+            # Keep heavy scanner scratch (CodeQL DBs, ClamAV unpack) and the
+            # self-extracting opengrep engine off the small read-only-rootfs /tmp
+            # - use the bigger /work emptyDir, or scans hit "No space left".
+            - name: TMPDIR
+              value: /work/tmp
+            - name: XDG_CACHE_HOME
+              value: /work/cache
+            # Scanners run over a RAM copy of the retained source for fast I/O
+            # (the in-memory emptyDir below). DEEPSCAN_SCAN_RAMFS=false disables it.
+            - name: DEEPSCAN_SCAN_RAMFS_DIR
+              value: /ramscan
+            # Per-scanner rule/config overrides (config/<scanner>/). Mount a
+            # ConfigMap/volume here to ship custom YARA/gitleaks/opengrep/... rules.
+            - name: DEEPSCAN_CONFIG_DIR
+              value: /config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi", ephemeral-storage: "4Gi" }
+          volumeMounts:
+            - { name: work, mountPath: /work }
+            - { name: tmp, mountPath: /tmp }
+            - { name: ramscan, mountPath: /ramscan }
+      volumes:
+        - name: work
+          emptyDir: { sizeLimit: 4Gi }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+        # RAM-backed scratch the scanners run over (DEEPSCAN_SCAN_RAMFS_DIR).
+        - name: ramscan
+          emptyDir: { medium: Memory, sizeLimit: 2Gi }

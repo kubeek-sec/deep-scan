@@ -1,0 +1,36 @@
+[project]
+name = "deepscan-kruncher"
+version = "0.1.0"
+description = "Deep Scan kruncher: periodic, change-driven scanning of connector sources with a Postgres-backed job queue"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "deepscan-core",
+    "deepscan-jobs",
+    "deepscan-input-connector-base",
+    "deepscan-input-connector-github",
+    "deepscan-input-connector-gitlab",
+    "deepscan-input-connector-directory",
+    "deepscan-input-connector-git",
+    "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
+]
+
+[project.scripts]
+deepscan-kruncher = "deepscan_kruncher.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deepscan_kruncher"]
+
+[tool.uv.sources]
+deepscan-core = { workspace = true }
+deepscan-jobs = { workspace = true }
+deepscan-input-connector-base = { workspace = true }
+deepscan-input-connector-github = { workspace = true }
+deepscan-input-connector-gitlab = { workspace = true }
+deepscan-input-connector-directory = { workspace = true }
+deepscan-input-connector-git = { workspace = true }

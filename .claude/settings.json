@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//tmp/**)",
+      "WebFetch(domain:api.github.com)"
+    ]
+  }
+}

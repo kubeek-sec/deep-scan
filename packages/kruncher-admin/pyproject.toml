@@ -1,0 +1,26 @@
+[project]
+name = "deepscan-kruncher-admin"
+version = "0.1.0"
+description = "Deep Scan kruncher admin: ASPM dashboard, job tracking and re-launch UI over the kruncher store"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "deepscan-kruncher",
+    "deepscan-core",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+]
+
+[project.scripts]
+deepscan-kruncher-admin = "deepscan_kruncher_admin.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deepscan_kruncher_admin"]
+
+[tool.uv.sources]
+deepscan-kruncher = { workspace = true }
+deepscan-core = { workspace = true }

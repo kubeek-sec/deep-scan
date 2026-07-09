@@ -1,0 +1,49 @@
+{
+  "instruction-override": {
+    "severity": "high",
+    "cwe": "CWE-1427",
+    "patterns": [
+      "\\b(?:ignore|disregard|forget|bypass|override)\\b[^.\\n]{0,40}\\b(?:previous|prior|above|earlier|all|any|the|your|these|those|system)\\b[^.\\n]{0,40}\\b(?:instruction|instructions|prompt|prompts|rule|rules|guideline|guidelines|context|message|messages|direction|directions)\\b",
+      "\\bnew\\s+(?:instructions?|directives?|rules?)\\s*:\\s*you\\s+are\\b",
+      "\\b(?:developer|admin|god|sudo)\\s+mode\\s+(?:enabled|activated|on)\\b",
+      "\\bdisregard\\s+(?:all\\s+)?safety\\s+(?:guidelines|rules|instructions)\\b"
+    ]
+  },
+  "hidden-behavior": {
+    "severity": "high",
+    "cwe": "CWE-1427",
+    "patterns": [
+      "\\bdo\\s+not\\s+(?:tell|mention|inform|reveal|disclose|notify|show)\\b[^.\\n]{0,30}\\buser\\b",
+      "\\bwithout\\s+(?:telling|informing|notifying|alerting)\\b[^.\\n]{0,20}\\buser\\b",
+      "\\b(?:tell|inform|show)\\s+the\\s+user\\s+only\\b",
+      "<\\s*IMPORTANT\\s*>",
+      "\\bdo\\s+not\\s+mention\\s+this\\b"
+    ]
+  },
+  "tool-poisoning": {
+    "severity": "high",
+    "cwe": "CWE-506",
+    "patterns": [
+      "\\b(?:also|additionally|secretly|silently|covertly|quietly)\\b[^.\\n]{0,30}\\b(?:collect|gather|send|upload|exfiltrate|transmit|read|cache|index|log|capture|record)\\b",
+      "\\bbefore\\s+(?:using|calling|executing|running)\\b[^.\\n]{0,30}\\b(?:any\\s+other|this|the)\\s+tool\\b",
+      "\\b(?:this\\s+)?tool\\s+must\\s+be\\s+(?:called|used|run|executed)\\s+first\\b",
+      "\\b(?:required|necessary)\\s+otherwise\\b[^.\\n]{0,30}\\btool\\b[^.\\n]{0,20}\\b(?:will\\s+not|won'?t|fails?)\\b"
+    ]
+  },
+  "data-exfiltration": {
+    "severity": "high",
+    "cwe": "CWE-200",
+    "patterns": [
+      "\\b(?:send|upload|post|exfiltrate|transmit|forward|leak)\\b[^.\\n]{0,40}\\b(?:to\\s+)?(?:https?://|external|remote|attacker|third[- ]?party)\\b",
+      "\\b(?:conversation|chat|message)\\s+history\\b[^.\\n]{0,30}\\b(?:send|upload|exfiltrate|transmit|forward|leak)\\b",
+      "\\b(?:send|upload|exfiltrate|transmit|forward|leak)\\b[^.\\n]{0,30}\\b(?:conversation|chat|message)\\s+history\\b"
+    ]
+  },
+  "credential-coercion": {
+    "severity": "high",
+    "cwe": "CWE-522",
+    "patterns": [
+      "\\b(?:read|cat|open|parse|extract|dump|exfiltrate|send|upload)\\b[^.\\n]{0,40}(?:~/\\.ssh|id_rsa|id_dsa|\\.aws/credentials|\\.env\\b|/etc/passwd|/etc/shadow|private\\s+key|api[_ ]?keys?|access\\s+tokens?)"
+    ]
+  }
+}

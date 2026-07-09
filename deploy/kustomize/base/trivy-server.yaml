@@ -1,0 +1,66 @@
+# Shared Trivy server: holds the vulnerability DB so the worker fleet scans in
+# client mode (DEEPSCAN_TRIVY_SERVER) and never downloads the DB itself - one
+# pull here instead of one per worker, so no registry rate-limiting.
+# The image tag MUST match the bundled trivy client (catalog pin: 0.71.0).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-server
+  labels: { app.kubernetes.io/name: trivy-server, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: trivy-server }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trivy-server
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"        # needs the internet to pull the DB
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: trivy
+          image: aquasec/trivy:0.71.0
+          args: ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
+          env:
+            - { name: TRIVY_CACHE_DIR, value: /cache }
+          ports: [{ containerPort: 4954, name: rpc }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: 4954 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: 4954 }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          volumeMounts:
+            - { name: cache, mountPath: /cache }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        # The DB (~50 MiB) re-downloads if the pod restarts. Swap for a small
+        # PVC to persist it across restarts.
+        - { name: cache, emptyDir: { sizeLimit: 2Gi } }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trivy-server
+  labels: { app.kubernetes.io/name: trivy-server }
+spec:
+  selector: { app.kubernetes.io/name: trivy-server }
+  ports:
+    - { name: rpc, port: 4954, targetPort: 4954 }

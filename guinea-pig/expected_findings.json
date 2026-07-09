@@ -1,0 +1,1171 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-06-11",
+  "summary": {
+    "total": 75,
+    "by_module": {
+      "src/python": 6,
+      "src/javascript": 6,
+      "src/typescript": 1,
+      "src/java": 1,
+      "src/go": 1,
+      "src/ruby": 1,
+      "src/php": 1,
+      "src/csharp": 1,
+      "src/c": 1,
+      "src/rust": 1,
+      "deps": 11,
+      "secrets": 11,
+      "infra": 12,
+      "ci": 7,
+      "dynamic": 9,
+      "skill": 4,
+      "malware": 1
+    },
+    "by_family": {
+      "sast": 22,
+      "sca": 11,
+      "secret": 11,
+      "iac": 12,
+      "pipeline": 7,
+      "dast": 9,
+      "malware": 3
+    }
+  },
+  "findings": [
+    {
+      "id": "GP-SAST-001",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/sql_injection.py",
+      "line": 11,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL query built by string concatenation",
+      "patched": "src/python/sql_injection_patched.py",
+      "notes": "username concatenated into SQL string before cur.execute(); also an f-string sink at line 20."
+    },
+    {
+      "id": "GP-SAST-002",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/command_injection.py",
+      "line": 10,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "OS command injection via os.system and shell=True",
+      "patched": "src/python/command_injection_patched.py",
+      "notes": "os.system with concatenated host; subprocess shell=True sinks at lines 15 and 20."
+    },
+    {
+      "id": "GP-SAST-003",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/path_traversal.py",
+      "line": 11,
+      "cwe": [
+        "CWE-22"
+      ],
+      "severity": "high",
+      "title": "Path traversal via unvalidated open()",
+      "patched": "src/python/path_traversal_patched.py",
+      "notes": "user path joined to BASE_DIR and opened; allows ../ escape."
+    },
+    {
+      "id": "GP-SAST-004",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/weak_crypto.py",
+      "line": 14,
+      "cwe": [
+        "CWE-327",
+        "CWE-328"
+      ],
+      "severity": "medium",
+      "title": "Weak cryptography: MD5 password hashing and DES/ECB",
+      "patched": null,
+      "notes": "hashlib.md5 for passwords (line 14), sha1 (line 18), DES MODE_ECB (line 23)."
+    },
+    {
+      "id": "GP-SAST-005",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/deserialization.py",
+      "line": 11,
+      "cwe": [
+        "CWE-502"
+      ],
+      "severity": "critical",
+      "title": "Deserialization of untrusted data (pickle / yaml.load)",
+      "patched": null,
+      "notes": "pickle.loads on untrusted bytes (line 11); yaml.load with unsafe Loader (lines 16, 21)."
+    },
+    {
+      "id": "GP-SAST-006",
+      "module": "src/python",
+      "family": "sast",
+      "file": "src/python/ssrf.py",
+      "line": 9,
+      "cwe": [
+        "CWE-918"
+      ],
+      "severity": "high",
+      "title": "Server-side request forgery via urllib.urlopen",
+      "patched": null,
+      "notes": "urlopen of attacker-controlled URL; metadata-reachable variant at line 14."
+    },
+    {
+      "id": "GP-SAST-007",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/eval_injection.js",
+      "line": 7,
+      "cwe": [
+        "CWE-94",
+        "CWE-95"
+      ],
+      "severity": "critical",
+      "title": "Code injection via eval() and Function() of user input",
+      "patched": null,
+      "notes": "eval(req.query.expr) at line 7; new Function() from user rule at line 13."
+    },
+    {
+      "id": "GP-SAST-008",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/xss.js",
+      "line": 8,
+      "cwe": [
+        "CWE-79"
+      ],
+      "severity": "high",
+      "title": "Reflected XSS via unescaped HTML concatenation",
+      "patched": null,
+      "notes": "res.send with concatenated req.query.name; template-literal sink at line 13."
+    },
+    {
+      "id": "GP-SAST-009",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/prototype_pollution.js",
+      "line": 6,
+      "cwe": [
+        "CWE-1321"
+      ],
+      "severity": "high",
+      "title": "Prototype pollution in recursive merge",
+      "patched": null,
+      "notes": "recursive merge copies __proto__/constructor keys from untrusted source."
+    },
+    {
+      "id": "GP-SAST-010",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/sql_injection.js",
+      "line": 10,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL injection via string concatenation",
+      "patched": null,
+      "notes": "db.query with concatenated id; template-literal login query at line 17."
+    },
+    {
+      "id": "GP-SAST-011",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/redirect.js",
+      "line": 7,
+      "cwe": [
+        "CWE-601"
+      ],
+      "severity": "medium",
+      "title": "Open redirect from unvalidated user URL",
+      "patched": null,
+      "notes": "res.redirect(req.query.url); Location header from req.query.next at line 13."
+    },
+    {
+      "id": "GP-SCA-001",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 6,
+      "cwe": [
+        "CWE-522"
+      ],
+      "severity": "high",
+      "title": "requests 2.19.1 vulnerable (CVE-2018-18074, credential leak on redirect)",
+      "patched": null,
+      "notes": "Upgrade to a current requests release."
+    },
+    {
+      "id": "GP-SCA-002",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 7,
+      "cwe": [
+        "CWE-200"
+      ],
+      "severity": "medium",
+      "title": "Flask 0.12.2 vulnerable (outdated, multiple advisories)",
+      "patched": null,
+      "notes": "Upgrade Flask to a maintained release."
+    },
+    {
+      "id": "GP-SCA-003",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 8,
+      "cwe": [
+        "CWE-502"
+      ],
+      "severity": "critical",
+      "title": "PyYAML 5.3.1 vulnerable (CVE-2020-14343, full_load RCE)",
+      "patched": null,
+      "notes": "Upgrade PyYAML to >=5.4."
+    },
+    {
+      "id": "GP-SCA-004",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 9,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "Django 2.2.0 vulnerable (CVE-2020-7471, SQL injection via StrAgg)",
+      "patched": null,
+      "notes": "Upgrade Django to a patched 2.2.x or later."
+    },
+    {
+      "id": "GP-SCA-005",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 10,
+      "cwe": [
+        "CWE-295"
+      ],
+      "severity": "high",
+      "title": "urllib3 1.24.1 vulnerable (CVE-2019-11324, cert handling / CRLF)",
+      "patched": null,
+      "notes": "Upgrade urllib3 to >=1.25."
+    },
+    {
+      "id": "GP-SCA-006",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/requirements.txt",
+      "line": 11,
+      "cwe": [
+        "CWE-94"
+      ],
+      "severity": "high",
+      "title": "Jinja2 2.10 vulnerable (CVE-2019-10906, sandbox escape)",
+      "patched": null,
+      "notes": "Upgrade Jinja2 to >=2.10.1."
+    },
+    {
+      "id": "GP-SCA-007",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/package.json",
+      "line": 8,
+      "cwe": [
+        "CWE-1321"
+      ],
+      "severity": "high",
+      "title": "lodash 4.17.4 vulnerable (CVE-2019-10744, prototype pollution)",
+      "patched": null,
+      "notes": "Upgrade lodash to >=4.17.12."
+    },
+    {
+      "id": "GP-SCA-008",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/package.json",
+      "line": 9,
+      "cwe": [
+        "CWE-1321"
+      ],
+      "severity": "medium",
+      "title": "minimist 1.2.0 vulnerable (CVE-2020-7598, prototype pollution)",
+      "patched": null,
+      "notes": "Upgrade minimist to >=1.2.6."
+    },
+    {
+      "id": "GP-SCA-009",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/package.json",
+      "line": 10,
+      "cwe": [
+        "CWE-79"
+      ],
+      "severity": "medium",
+      "title": "express 4.16.0 vulnerable (outdated, transitive advisories)",
+      "patched": null,
+      "notes": "Upgrade express to a current 4.x release."
+    },
+    {
+      "id": "GP-SCA-010",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/package.json",
+      "line": 11,
+      "cwe": [
+        "CWE-918"
+      ],
+      "severity": "high",
+      "title": "axios 0.21.0 vulnerable (CVE-2020-28168, SSRF via redirect)",
+      "patched": null,
+      "notes": "Upgrade axios to >=0.21.1."
+    },
+    {
+      "id": "GP-SCA-011",
+      "module": "deps",
+      "family": "sca",
+      "file": "deps/package.json",
+      "line": 12,
+      "cwe": [
+        "CWE-502"
+      ],
+      "severity": "critical",
+      "title": "node-serialize 0.0.4 vulnerable (CVE-2017-5941, RCE on deserialize)",
+      "patched": null,
+      "notes": "Remove node-serialize; it executes code embedded in serialized input."
+    },
+    {
+      "id": "GP-SECRET-001",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 3,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded AWS access key id",
+      "patched": null,
+      "notes": "Fake AKIA-prefixed key for detector testing."
+    },
+    {
+      "id": "GP-SECRET-002",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 4,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded AWS secret access key",
+      "patched": null,
+      "notes": "Fake 40-char AWS secret."
+    },
+    {
+      "id": "GP-SECRET-003",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 5,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Database URL with embedded password",
+      "patched": null,
+      "notes": "postgres connection string contains plaintext credentials."
+    },
+    {
+      "id": "GP-SECRET-004",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 6,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded Stripe secret test key",
+      "patched": null,
+      "notes": "Fake sk_test_ Stripe key."
+    },
+    {
+      "id": "GP-SECRET-005",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 7,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded GitHub personal access token",
+      "patched": null,
+      "notes": "Fake ghp_ token (40 chars)."
+    },
+    {
+      "id": "GP-SECRET-006",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/.env",
+      "line": 8,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "medium",
+      "title": "Hardcoded JWT signing secret",
+      "patched": null,
+      "notes": "Generic high-entropy signing secret."
+    },
+    {
+      "id": "GP-SECRET-007",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/config.ini",
+      "line": 6,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded database password",
+      "patched": null,
+      "notes": "password entry under [database]."
+    },
+    {
+      "id": "GP-SECRET-008",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/config.ini",
+      "line": 9,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "medium",
+      "title": "Hardcoded API key",
+      "patched": null,
+      "notes": "api_key entry under [api]."
+    },
+    {
+      "id": "GP-SECRET-009",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/config.ini",
+      "line": 10,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "medium",
+      "title": "Hardcoded secret token",
+      "patched": null,
+      "notes": "secret_token entry under [api]."
+    },
+    {
+      "id": "GP-SECRET-010",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/config.ini",
+      "line": 14,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded SMTP/SendGrid password",
+      "patched": null,
+      "notes": "SG.-prefixed SendGrid-style key under [smtp]."
+    },
+    {
+      "id": "GP-SECRET-011",
+      "module": "secrets",
+      "family": "secret",
+      "file": "secrets/service-account.pem",
+      "line": 1,
+      "cwe": [
+        "CWE-798",
+        "CWE-321"
+      ],
+      "severity": "critical",
+      "title": "Private key committed to the repo",
+      "patched": null,
+      "notes": "Throwaway RSA private key PEM, never used anywhere."
+    },
+    {
+      "id": "GP-IAC-001",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/main.tf",
+      "line": 16,
+      "cwe": [
+        "CWE-732",
+        "CWE-311"
+      ],
+      "severity": "high",
+      "title": "S3 bucket public-read ACL and no server-side encryption",
+      "patched": null,
+      "notes": "acl = public-read and no encryption configuration block."
+    },
+    {
+      "id": "GP-IAC-002",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/main.tf",
+      "line": 27,
+      "cwe": [
+        "CWE-284"
+      ],
+      "severity": "high",
+      "title": "Security group allows SSH (22) from 0.0.0.0/0",
+      "patched": null,
+      "notes": "ingress port 22 open to the entire internet."
+    },
+    {
+      "id": "GP-IAC-003",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/main.tf",
+      "line": 9,
+      "cwe": [
+        "CWE-798"
+      ],
+      "severity": "high",
+      "title": "Hardcoded AWS credentials in Terraform provider",
+      "patched": null,
+      "notes": "access_key/secret_key literals in the aws provider block."
+    },
+    {
+      "id": "GP-IAC-004",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/main.tf",
+      "line": 38,
+      "cwe": [
+        "CWE-732",
+        "CWE-311"
+      ],
+      "severity": "high",
+      "title": "RDS instance publicly accessible and unencrypted",
+      "patched": null,
+      "notes": "publicly_accessible = true and storage_encrypted = false; also hardcoded password."
+    },
+    {
+      "id": "GP-IAC-005",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/pod.yaml",
+      "line": 16,
+      "cwe": [
+        "CWE-250"
+      ],
+      "severity": "high",
+      "title": "Privileged container",
+      "patched": null,
+      "notes": "securityContext.privileged = true enables host escape."
+    },
+    {
+      "id": "GP-IAC-006",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/pod.yaml",
+      "line": 10,
+      "cwe": [
+        "CWE-668"
+      ],
+      "severity": "medium",
+      "title": "Pod uses host network namespace",
+      "patched": null,
+      "notes": "hostNetwork = true."
+    },
+    {
+      "id": "GP-IAC-007",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/pod.yaml",
+      "line": 27,
+      "cwe": [
+        "CWE-732",
+        "CWE-22"
+      ],
+      "severity": "high",
+      "title": "hostPath mounts the entire host root filesystem",
+      "patched": null,
+      "notes": "hostPath.path = / exposes the node filesystem."
+    },
+    {
+      "id": "GP-IAC-008",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/pod.yaml",
+      "line": 18,
+      "cwe": [
+        "CWE-250"
+      ],
+      "severity": "medium",
+      "title": "Container runs as root (runAsUser 0)",
+      "patched": null,
+      "notes": "runAsUser = 0 plus allowPrivilegeEscalation = true."
+    },
+    {
+      "id": "GP-IAC-009",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/Dockerfile",
+      "line": 6,
+      "cwe": [
+        "CWE-1357"
+      ],
+      "severity": "low",
+      "title": "Base image uses mutable 'latest' tag",
+      "patched": null,
+      "notes": "FROM ubuntu:latest is non-reproducible and unverified."
+    },
+    {
+      "id": "GP-IAC-010",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/Dockerfile",
+      "line": 9,
+      "cwe": [
+        "CWE-250"
+      ],
+      "severity": "medium",
+      "title": "Container process runs as root",
+      "patched": null,
+      "notes": "USER root with no de-escalation."
+    },
+    {
+      "id": "GP-IAC-011",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/Dockerfile",
+      "line": 12,
+      "cwe": [
+        "CWE-494"
+      ],
+      "severity": "high",
+      "title": "Remote script piped to bash during build",
+      "patched": null,
+      "notes": "curl ... | bash with no integrity verification."
+    },
+    {
+      "id": "GP-IAC-012",
+      "module": "infra",
+      "family": "iac",
+      "file": "infra/Dockerfile",
+      "line": 15,
+      "cwe": [
+        "CWE-494"
+      ],
+      "severity": "medium",
+      "title": "ADD fetches a remote URL without checksum",
+      "patched": null,
+      "notes": "ADD https://... pulls remote content (MITM risk)."
+    },
+    {
+      "id": "GP-PIPELINE-001",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/github-workflow.yml",
+      "line": 28,
+      "cwe": [
+        "CWE-94"
+      ],
+      "severity": "critical",
+      "title": "Script injection: PR title interpolated into run step",
+      "patched": null,
+      "notes": "pull_request_target + ${{ github.event.pull_request.title }} in a run: shell command."
+    },
+    {
+      "id": "GP-PIPELINE-002",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/github-workflow.yml",
+      "line": 24,
+      "cwe": [
+        "CWE-829"
+      ],
+      "severity": "medium",
+      "title": "Action pinned to a mutable branch (@master)",
+      "patched": null,
+      "notes": "third-party action referenced by mutable ref instead of a commit SHA."
+    },
+    {
+      "id": "GP-PIPELINE-003",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/github-workflow.yml",
+      "line": 12,
+      "cwe": [
+        "CWE-732",
+        "CWE-250"
+      ],
+      "severity": "medium",
+      "title": "Workflow grants permissions: write-all",
+      "patched": null,
+      "notes": "GITHUB_TOKEN gets every permission combined with untrusted PR checkout."
+    },
+    {
+      "id": "GP-PIPELINE-004",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/github-workflow.yml",
+      "line": 32,
+      "cwe": [
+        "CWE-494"
+      ],
+      "severity": "high",
+      "title": "Remote script piped to bash in CI",
+      "patched": null,
+      "notes": "curl ... | bash with no integrity verification."
+    },
+    {
+      "id": "GP-PIPELINE-005",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/gitlab-ci.yml",
+      "line": 6,
+      "cwe": [
+        "CWE-1357"
+      ],
+      "severity": "low",
+      "title": "CI image uses mutable 'latest' tag",
+      "patched": null,
+      "notes": "image: node:latest is non-reproducible."
+    },
+    {
+      "id": "GP-PIPELINE-006",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/gitlab-ci.yml",
+      "line": 15,
+      "cwe": [
+        "CWE-532"
+      ],
+      "severity": "medium",
+      "title": "Secret token echoed into the job log",
+      "patched": null,
+      "notes": "echo of $SECRET_TOKEN writes a credential to (often public) logs."
+    },
+    {
+      "id": "GP-PIPELINE-007",
+      "module": "ci",
+      "family": "pipeline",
+      "file": "ci/gitlab-ci.yml",
+      "line": 17,
+      "cwe": [
+        "CWE-494"
+      ],
+      "severity": "high",
+      "title": "Remote script piped to shell in CI",
+      "patched": null,
+      "notes": "curl ... | sh with no integrity verification."
+    },
+    {
+      "id": "GP-DAST-001",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 70,
+      "url_path": "/search",
+      "cwe": [
+        "CWE-79"
+      ],
+      "severity": "high",
+      "title": "Reflected XSS on /search?q=",
+      "patched": null,
+      "notes": "q echoed into the HTML response unescaped."
+    },
+    {
+      "id": "GP-DAST-002",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 77,
+      "url_path": "/users",
+      "cwe": [
+        "CWE-89",
+        "CWE-209"
+      ],
+      "severity": "high",
+      "title": "SQL injection and verbose SQL error on /users?id=",
+      "patched": null,
+      "notes": "id concatenated into SQL; raw exception repr disclosed on failure (line 82)."
+    },
+    {
+      "id": "GP-DAST-003",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 87,
+      "url_path": "/ping",
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "OS command injection on /ping?host=",
+      "patched": null,
+      "notes": "host concatenated into os.popen('ping -c 1 ...')."
+    },
+    {
+      "id": "GP-DAST-004",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 94,
+      "url_path": "/download",
+      "cwe": [
+        "CWE-22"
+      ],
+      "severity": "high",
+      "title": "Path traversal on /download?file=",
+      "patched": null,
+      "notes": "file appended to /var/www/files/ and opened; allows ../ escape."
+    },
+    {
+      "id": "GP-DAST-005",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 102,
+      "url_path": "/redirect",
+      "cwe": [
+        "CWE-601"
+      ],
+      "severity": "medium",
+      "title": "Open redirect on /redirect?url=",
+      "patched": null,
+      "notes": "url placed directly into the Location header of a 302."
+    },
+    {
+      "id": "GP-DAST-006",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 108,
+      "url_path": "/fetch",
+      "cwe": [
+        "CWE-918"
+      ],
+      "severity": "high",
+      "title": "SSRF on /fetch?url=",
+      "patched": null,
+      "notes": "server fetches an attacker-controlled URL via urllib.urlopen."
+    },
+    {
+      "id": "GP-DAST-007",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 118,
+      "url_path": "/set-cookie",
+      "cwe": [
+        "CWE-614",
+        "CWE-1004"
+      ],
+      "severity": "medium",
+      "title": "Session cookie without HttpOnly/Secure/SameSite",
+      "patched": null,
+      "notes": "Set-Cookie lacks HttpOnly, Secure and SameSite attributes."
+    },
+    {
+      "id": "GP-DAST-008",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 50,
+      "url_path": "/",
+      "cwe": [
+        "CWE-942"
+      ],
+      "severity": "medium",
+      "title": "Permissive CORS: Allow-Origin * with Allow-Credentials true",
+      "patched": null,
+      "notes": "global CORS headers sent on every response."
+    },
+    {
+      "id": "GP-DAST-009",
+      "module": "dynamic",
+      "family": "dast",
+      "file": "dynamic/server.py",
+      "line": 52,
+      "url_path": "/",
+      "cwe": [
+        "CWE-693"
+      ],
+      "severity": "low",
+      "title": "Missing security headers (CSP, X-Frame-Options, nosniff, HSTS)",
+      "patched": null,
+      "notes": "no protective response headers anywhere; baseline DAST checks fire."
+    },
+    {
+      "id": "GP-SKILL-001",
+      "module": "skill",
+      "family": "malware",
+      "file": "skill/SKILL.md",
+      "line": 4,
+      "cwe": [
+        "CWE-1427",
+        "CWE-506"
+      ],
+      "severity": "high",
+      "title": "Malicious agent skill: prompt injection + tool poisoning + exfiltration in the description",
+      "notes": "YARA (prompt_injection / coercive_injection / tool_poisoning / data_exfiltration / credential_harvesting) and mcp-threats (instruction-override / hidden-behavior / tool-poisoning / data-exfiltration / credential-coercion) flag the <IMPORTANT> block, 'also secretly collect/upload', 'ignore all previous instructions', and exfil-to-attacker text."
+    },
+    {
+      "id": "GP-SKILL-002",
+      "module": "skill",
+      "family": "malware",
+      "file": "skill/SKILL.md",
+      "line": 30,
+      "cwe": [
+        "CWE-1007"
+      ],
+      "severity": "medium",
+      "title": "Hidden instructions smuggled via invisible/bidirectional Unicode",
+      "notes": "mcp-threats 'invisible-unicode' flags U+200B (zero-width space) and U+202E (right-to-left override) embedded in the footnote line."
+    },
+    {
+      "id": "GP-SKILL-003",
+      "module": "skill",
+      "family": "sast",
+      "file": "skill/SKILL.md",
+      "line": 4,
+      "cwe": [
+        "CWE-1427"
+      ],
+      "severity": "high",
+      "title": "Malicious AI agent skill detected by cisco-ai-skill-scanner",
+      "notes": "cisco-ai-skill-scanner (sast family) flags the skill's prompt injection / data exfiltration / instruction override. Only fires when that uv tool is installed."
+    },
+    {
+      "id": "GP-SKILL-004",
+      "module": "skill",
+      "family": "sast",
+      "file": "skill/scripts/summarize.py",
+      "line": 16,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "OS command injection via os.system and subprocess shell=True",
+      "notes": "summarize.py concatenates the untrusted path into os.system and subprocess.run(shell=True); also exfiltrates file contents via requests.post. Flagged by analysis / opengrep / YARA."
+    },
+    {
+      "id": "GP-MAL-001",
+      "module": "malware",
+      "family": "malware",
+      "file": "malware/eicar.txt",
+      "line": 1,
+      "cwe": [
+        "CWE-506"
+      ],
+      "severity": "critical",
+      "title": "EICAR standard antivirus test signature",
+      "notes": "clamav flags the harmless 68-byte EICAR test string as Eicar-Signature \u2014 a guaranteed malware-family positive."
+    },
+    {
+      "id": "GP-SAST-014",
+      "module": "src/javascript",
+      "family": "sast",
+      "file": "src/javascript/command_injection.js",
+      "line": 9,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "Command injection via child_process.exec",
+      "patched": "src/javascript/command_injection_patched.js",
+      "notes": "untrusted req.query.host flows through runCommand() into cp.exec(); cross-function taint. Patched sibling uses execFile with an argument array (no shell)."
+    },
+    {
+      "id": "GP-SAST-015",
+      "module": "src/typescript",
+      "family": "sast",
+      "file": "src/typescript/sql_injection.ts",
+      "line": 11,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL query built by string concatenation",
+      "patched": "src/typescript/sql_injection_patched.ts",
+      "notes": "req.params.id flows through loadUser() into a concatenated db.query(); cross-function taint. Patched sibling binds the value as a parameter."
+    },
+    {
+      "id": "GP-SAST-016",
+      "module": "src/java",
+      "family": "sast",
+      "file": "src/java/SqlInjection.java",
+      "line": 9,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL query built by string concatenation",
+      "patched": "src/java/SqlInjectionPatched.java",
+      "notes": "untrusted id flows through runQuery() into a concatenated executeQuery(); cross-function taint. Patched sibling uses a PreparedStatement with a bound parameter."
+    },
+    {
+      "id": "GP-SAST-017",
+      "module": "src/go",
+      "family": "sast",
+      "file": "src/go/sql_injection.go",
+      "line": 10,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL query built by string concatenation",
+      "patched": "src/go/sql_injection_patched.go",
+      "notes": "untrusted id flows through runQuery() into a concatenated db.Query(); cross-function taint. Patched sibling uses a parameterized query ($1)."
+    },
+    {
+      "id": "GP-SAST-018",
+      "module": "src/ruby",
+      "family": "sast",
+      "file": "src/ruby/command_injection.rb",
+      "line": 7,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "Command injection via Kernel#system",
+      "patched": "src/ruby/command_injection_patched.rb",
+      "notes": "untrusted input flows through run_cmd() into system(); cross-function taint. Patched sibling escapes the argument via Shellwords.escape."
+    },
+    {
+      "id": "GP-SAST-019",
+      "module": "src/php",
+      "family": "sast",
+      "file": "src/php/command_injection.php",
+      "line": 8,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "Command injection via system()",
+      "patched": "src/php/command_injection_patched.php",
+      "notes": "untrusted $host flows through runCommand() into system(); cross-function taint. Patched sibling escapes the argument via escapeshellarg()."
+    },
+    {
+      "id": "GP-SAST-020",
+      "module": "src/csharp",
+      "family": "sast",
+      "file": "src/csharp/SqlInjection.cs",
+      "line": 10,
+      "cwe": [
+        "CWE-89"
+      ],
+      "severity": "high",
+      "title": "SQL query built by string concatenation",
+      "patched": "src/csharp/SqlInjectionPatched.cs",
+      "notes": "untrusted name flows through Run() into a concatenated SqlCommand; cross-function taint. Patched sibling uses a parameterized SqlCommand (AddWithValue)."
+    },
+    {
+      "id": "GP-SAST-021",
+      "module": "src/rust",
+      "family": "sast",
+      "file": "src/rust/command_injection.rs",
+      "line": 8,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "Command injection via Command::new",
+      "patched": "src/rust/command_injection_patched.rs",
+      "notes": "untrusted program name flows through run_cmd() into Command::new(); cross-function taint. Patched sibling uses a constant program and passes input only as an argument."
+    },
+    {
+      "id": "GP-SAST-022",
+      "module": "src/c",
+      "family": "sast",
+      "file": "src/c/command_injection.c",
+      "line": 9,
+      "cwe": [
+        "CWE-78"
+      ],
+      "severity": "critical",
+      "title": "Command injection via system()",
+      "patched": "src/c/command_injection_patched.c",
+      "notes": "untrusted string flows through run_cmd() into system(); cross-function taint. Patched sibling uses execlp with a constant program (no shell)."
+    }
+  ],
+  "false_positive_traps": [
+    {
+      "file": "src/python/sql_injection_patched.py",
+      "reason": "Parameterized query (bound ? placeholders) \u2014 remediation of GP-SAST-001; expect no SQLi finding."
+    },
+    {
+      "file": "src/python/command_injection_patched.py",
+      "reason": "subprocess with argument list and shlex.quote, no shell \u2014 remediation of GP-SAST-002; expect no command-injection finding."
+    },
+    {
+      "file": "src/python/path_traversal_patched.py",
+      "reason": "realpath + containment check inside BASE_DIR \u2014 remediation of GP-SAST-003; expect no path-traversal finding."
+    },
+    {
+      "file": "secrets/false_positives.txt",
+      "reason": "AKIAIOSFODNN7EXAMPLE is AWS's published documentation example key, not a real credential."
+    },
+    {
+      "file": "secrets/false_positives.txt",
+      "reason": "SHA-256 hex digest of the word 'password' \u2014 a one-way digest, not a secret."
+    },
+    {
+      "file": "secrets/false_positives.txt",
+      "reason": "Random UUID v4 \u2014 an identifier, not a credential."
+    },
+    {
+      "file": "secrets/false_positives.txt",
+      "reason": "${DB_PASSWORD} is an environment-variable placeholder resolved at runtime, holds no secret."
+    },
+    {
+      "file": "secrets/false_positives.txt",
+      "reason": "jwt.io public demo token signed with the well-known 'your-256-bit-secret' example key."
+    },
+    {
+      "file": "src/javascript/command_injection_patched.js",
+      "reason": "execFile with a constant binary and an argument array (no shell) - remediation of GP-SAST-014; expect no command-injection finding."
+    },
+    {
+      "file": "src/typescript/sql_injection_patched.ts",
+      "reason": "parameterized query (constant SQL + bound value) - remediation of GP-SAST-015; expect no SQLi finding."
+    },
+    {
+      "file": "src/java/SqlInjectionPatched.java",
+      "reason": "PreparedStatement with a bound parameter - remediation of GP-SAST-016; expect no SQLi finding."
+    },
+    {
+      "file": "src/go/sql_injection_patched.go",
+      "reason": "parameterized query ($1 placeholder) - remediation of GP-SAST-017; expect no SQLi finding."
+    },
+    {
+      "file": "src/ruby/command_injection_patched.rb",
+      "reason": "argument escaped via Shellwords.escape - remediation of GP-SAST-018; expect no command-injection finding."
+    },
+    {
+      "file": "src/php/command_injection_patched.php",
+      "reason": "argument escaped via escapeshellarg - remediation of GP-SAST-019; expect no command-injection finding."
+    },
+    {
+      "file": "src/csharp/SqlInjectionPatched.cs",
+      "reason": "parameterized SqlCommand (AddWithValue) - remediation of GP-SAST-020; expect no SQLi finding."
+    },
+    {
+      "file": "src/rust/command_injection_patched.rs",
+      "reason": "constant program with input passed only as an argument - remediation of GP-SAST-021; expect no command-injection finding."
+    },
+    {
+      "file": "src/c/command_injection_patched.c",
+      "reason": "execlp with a constant program (no shell) - remediation of GP-SAST-022; expect no command-injection finding."
+    }
+  ]
+}

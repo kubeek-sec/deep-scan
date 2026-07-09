@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Scan - Kruncher Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <h1>Deep&nbsp;Scan</h1>
+      <span class="brand-sub">kruncher admin · ASPM</span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="scopes">Scopes</button>
+      <button class="tab" data-view="sources">Sources</button>
+      <button class="tab" data-view="jobs">Jobs</button>
+    </nav>
+    <button id="refresh" class="ghost" title="Refresh">↻</button>
+  </header>
+
+  <main class="layout">
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dashboard">
+      <div class="cards" id="posture-cards"></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Active findings over time</h2>
+          <div class="seg">
+            <button class="seg-btn active" data-window="3m">3 months</button>
+            <button class="seg-btn" data-window="1y">12 months</button>
+          </div>
+        </div>
+        <div id="trend-chart" class="chart"></div>
+        <div class="legend">
+          <span><i class="sw crit"></i>critical</span>
+          <span><i class="sw high"></i>high</span>
+          <span><i class="sw med"></i>medium</span>
+          <span><i class="sw low"></i>low</span>
+          <span class="legend-note">each source's latest scan, carried forward · hover for counts</span>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h2>By scope</h2>
+          <div id="scope-table" class="scroll"></div>
+        </div>
+        <div class="panel">
+          <h2>Top exposed sources</h2>
+          <div id="top-table" class="scroll"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCOPES -->
+    <section class="view" id="view-scopes" hidden>
+      <div class="panel">
+        <div class="panel-actions">
+          <h2>Scopes</h2>
+          <button class="btn" id="add-scope">+ Add scope</button>
+        </div>
+        <div id="scopes-table" class="scroll tall"></div>
+      </div>
+    </section>
+
+    <!-- SOURCES -->
+    <section class="view" id="view-sources" hidden>
+      <div class="panel">
+        <div class="panel-actions">
+          <h2>Sources</h2>
+          <button class="btn" id="add-source">+ Add source</button>
+        </div>
+        <div class="toolbar">
+          <input id="src-search" type="search" placeholder="Search sources…">
+          <select id="src-scope"><option value="">All scopes</option></select>
+          <select id="src-risk">
+            <option value="">Any risk</option>
+            <option value="critical">Has critical</option>
+            <option value="high">Critical or high</option>
+            <option value="clean">Clean</option>
+            <option value="unscanned">Never scanned</option>
+          </select>
+        </div>
+        <div id="sources-table" class="scroll tall"></div>
+        <div class="pager">
+          <button id="src-prev" class="ghost">← Prev</button>
+          <span id="src-page-info"></span>
+          <button id="src-next" class="ghost">Next →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- JOBS -->
+    <section class="view" id="view-jobs" hidden>
+      <div class="panel">
+        <div class="toolbar">
+          <select id="job-origin" title="Queue">
+            <option value="">All queues</option>
+            <option value="adhoc">Manual (API/MCP)</option>
+            <option value="discovery">Periodic</option>
+          </select>
+          <select id="job-status">
+            <option value="">All statuses</option>
+            <option value="queued">Queued</option>
+            <option value="running">Running</option>
+            <option value="done">Done</option>
+            <option value="failed">Failed (retrying)</option>
+            <option value="dead">Dead-letter</option>
+            <option value="superseded">Superseded</option>
+          </select>
+        </div>
+        <div id="queue-depth" class="queue-depth"></div>
+        <div id="jobs-table" class="scroll tall"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h3 id="drawer-title"></h3>
+      <button id="drawer-close" class="ghost">✕</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <div id="modal-root"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

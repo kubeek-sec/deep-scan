@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepscan-admin
+  labels: { app.kubernetes.io/name: admin, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: admin }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: admin
+        app.kubernetes.io/part-of: deepscan
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: admin
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-kruncher-admin"]
+          env:
+            - name: DEEPSCAN_ADMIN_HOST
+              value: "0.0.0.0"
+            - name: DEEPSCAN_ADMIN_PORT
+              value: "8900"
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }
+          ports: [{ containerPort: 8900, name: http }]
+          readinessProbe:
+            httpGet: { path: /api/overview, port: 8900 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepscan-admin
+  labels: { app.kubernetes.io/name: admin }
+spec:
+  selector: { app.kubernetes.io/name: admin }
+  ports:
+    - { name: http, port: 80, targetPort: 8900 }

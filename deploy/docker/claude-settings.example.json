@@ -1,0 +1,13 @@
+{
+  "//": "Example settings to run the LLM scanner against a LOCAL, OpenAI/Anthropic-compatible model (e.g. LM Studio) to save tokens. Pass it to the scanner with DEEPSCAN_CLAUDE_SETTINGS=/path/to/this.json - it is forwarded as `claude --settings`. The `env` block selects the endpoint/model for the session.",
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
+    "ANTHROPIC_BASE_URL": "http://192.168.1.43:1234",
+    "ANTHROPIC_AUTH_TOKEN": "lmstudio",
+    "BASH_DEFAULT_TIMEOUT_MS": "1800000",
+    "BASH_MAX_TIMEOUT_MS": "7200000",
+    "API_TIMEOUT_MS": "3000000",
+    "ANTHROPIC_MODEL": "foundation-sec-8b@q8_0",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"
+  }
+}

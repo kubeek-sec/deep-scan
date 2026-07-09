@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Scan</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <h1>Deep&nbsp;Scan</h1>
+      <span class="brand-sub">adhoc scanners</span>
+    </div>
+    <nav class="main-tabs" role="tablist">
+      <button class="main-tab active" data-tab="new" type="button" role="tab">New scan</button>
+      <button class="main-tab" data-tab="history" type="button" role="tab">History</button>
+      <button class="main-tab" data-tab="ci" type="button" role="tab">CI templates</button>
+    </nav>
+    <div class="topbar-right">
+      <div id="queue-indicator" class="queue-indicator" hidden>
+        <span class="spinner"></span><span id="queue-indicator-text"></span>
+      </div>
+      <button id="info-btn" class="btn ghost info-btn" type="button"
+              title="Scanners &amp; analyses in place">&#9432;&nbsp;Scanners &amp; analyses</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- TAB: New scan - define the target, then follow the scan you just launched -->
+    <section class="view" id="view-new">
+    <section class="panel" id="new-scan-panel">
+      <h2>New scan</h2>
+      <form id="scan-form" autocomplete="off">
+        <div class="mode-tabs" role="tablist">
+          <button type="button" class="mode-tab active" data-mode="static" role="tab">
+            <span class="mode-title">Static analysis</span>
+            <span class="mode-sub">scan a project - folder, zip or repo</span>
+          </button>
+          <button type="button" class="mode-tab" data-mode="dynamic" role="tab">
+            <span class="mode-title">Dynamic analysis</span>
+            <span class="mode-sub">DAST against a running URL</span>
+          </button>
+        </div>
+
+        <div class="mode-group" data-mode-group="static">
+          <p class="source-lead dim">Pick what to scan - a project always ends up uploaded as a <strong>.zip</strong>.</p>
+          <div class="source-tabs" role="tablist">
+            <button type="button" class="source-tab active" data-source="archive" role="tab">
+              <span class="src-title">Folder or Zip</span>
+              <span class="src-sub">drag &amp; drop · zipped in your browser</span>
+            </button>
+            <button type="button" class="source-tab" data-source="repo" role="tab">
+              <span class="src-title">Repository URL</span>
+              <span class="src-sub">GitHub / GitLab / any git · cloned on the server</span>
+            </button>
+          </div>
+
+          <div class="source-pane" data-pane="archive">
+            <div id="dropzone" class="dropzone" tabindex="0" role="button"
+                 aria-label="Drop a folder or a .zip, or choose one">
+              <div class="dz-icon">&#8681;</div>
+              <div class="dz-main">Drop a <strong>folder</strong> or a <strong>.zip</strong> here</div>
+              <div class="dz-sub">Folders are packed into a .zip in your browser; VCS/deps dirs are skipped.</div>
+              <div class="dz-actions">
+                <button type="button" class="btn small" id="pick-folder">Choose folder</button>
+                <button type="button" class="btn small ghost" id="pick-zip">Choose .zip</button>
+              </div>
+            </div>
+            <div id="dz-selected" class="dz-selected" hidden></div>
+            <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
+            <input type="file" id="zip-input" accept=".zip,application/zip" hidden>
+          </div>
+
+          <div class="source-pane" data-pane="repo" hidden>
+            <label class="field grow">
+              <span>Repository URL</span>
+              <input type="text" id="repo-input"
+                     placeholder="https://github.com/org/repo  (or .git)">
+            </label>
+            <p class="hint dim">Cloned on the server - GitHub, GitLab, Bitbucket, any https git URL.</p>
+          </div>
+
+          <fieldset class="families">
+            <legend>Families <small>(all when none selected)</small></legend>
+            <div id="family-checks" class="family-checks"></div>
+          </fieldset>
+        </div>
+
+        <div class="mode-group" data-mode-group="dynamic" hidden>
+          <label class="field grow">
+            <span>Live URL to analyze</span>
+            <input type="text" id="dast-input" placeholder="https://example.com">
+          </label>
+          <p class="hint dim">Dynamic (DAST) scan against a running site - needs the nuclei / ZAP tools.</p>
+        </div>
+
+        <div class="form-footer">
+          <button type="submit" id="submit-btn" class="btn primary">Start scan</button>
+          <span id="form-progress" class="form-progress"></span>
+          <span id="form-error" class="error-msg" role="alert"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- the scan you just launched, tracked live, lands here -->
+    <div id="mount-new" class="detail-mount"></div>
+    </section>
+
+    <!-- TAB: History - every past scan, paginated -->
+    <section class="view" id="view-history" hidden>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Scan history</h2>
+          <button id="refresh-btn" class="btn ghost" type="button" title="Refresh">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table class="jobs-table" id="jobs-table">
+            <thead>
+              <tr>
+                <th>Id</th><th>Target</th><th>Type</th><th>Queue</th><th>Status</th><th>Created</th><th>Severity</th>
+              </tr>
+            </thead>
+            <tbody id="jobs-body">
+              <tr><td colspan="7" class="empty">No scans yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="history-pager" hidden></div>
+      </section>
+
+      <!-- a history scan you click on opens here -->
+      <div id="mount-history" class="detail-mount"></div>
+    </section>
+
+    <!-- TAB: CI templates - a 5-step wizard that generates a pipeline file
+         running Deep Scan from this project's Docker image. Built by pipelines.js. -->
+    <section class="view" id="view-ci" hidden></section>
+
+    <section class="panel" id="detail-panel" hidden>
+      <div class="panel-head">
+        <h2>Scan <code id="detail-id"></code></h2>
+        <div class="detail-actions" id="detail-actions"></div>
+      </div>
+      <div id="detail-meta" class="detail-meta"></div>
+      <div id="detail-error" class="error-msg"></div>
+      <div id="detail-progress"></div>
+      <div id="detail-summary"></div>
+      <div id="detail-subtabs" class="subtabs" hidden></div>
+      <div id="pane-findings" class="subpane">
+        <div id="detail-findings"></div>
+        <div id="detail-tools"></div>
+      </div>
+      <div id="pane-graph" class="subpane" hidden>
+        <div class="graph-bar">
+          <span class="dim small">Interactive code graph - pan, zoom and filter inside the frame.</span>
+          <a id="graph-open" class="btn small ghost" target="_blank" rel="noopener">Open full graph ↗</a>
+        </div>
+        <div id="graph-mount"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="info-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <div class="modal-head">
+        <h2 id="info-title">Scanners &amp; analyses</h2>
+        <button id="info-close" class="btn ghost small" type="button" aria-label="Close">&#10005;</button>
+      </div>
+      <p class="modal-intro dim">
+        Everything Deep Scan can run, grouped by family. A full scan runs every
+        applicable scanner and deduplicates the findings; managed tools are
+        skipped until installed (<code>deepscan tools install &lt;name&gt;</code>).
+      </p>
+      <div id="info-body" class="info-body"><span class="dim">Loading…</span></div>
+    </div>
+  </div>
+
+  <script src="zip.js"></script>
+  <script src="pipelines.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

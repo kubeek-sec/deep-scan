@@ -1,0 +1,81 @@
+# Network isolation for the scanning workers.
+#
+# Scanners run untrusted code's dependencies (resolving a lockfile, etc.), so we
+# fence egress to the minimum: DNS, the database, and outbound HTTPS/HTTP to the
+# internet for git hosts and package registries - with RFC1918/link-local ranges
+# excluded so a compromised scan can't pivot to internal services (SSRF).
+#
+# NOTE: plain NetworkPolicy filters by port + CIDR, not by hostname. To truly
+# restrict egress to *only* your package manager / git host, layer an
+# FQDN-aware policy (Cilium CiliumNetworkPolicy) or route egress through an
+# allow-list proxy. This is the strongest control portable across CNIs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deepscan-egress-fence
+spec:
+  podSelector:
+    matchLabels: { deepscan/egress: "true" }
+  policyTypes: [Egress]
+  egress:
+    # DNS resolution.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # The database.
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: postgres } }
+      ports:
+        - { protocol: TCP, port: 5432 }
+    # The shared Trivy server (ClusterIP is in a private range the internet rule
+    # below excludes, so it needs its own allow).
+    - to:
+        - podSelector: { matchLabels: { app.kubernetes.io/name: trivy-server } }
+      ports:
+        - { protocol: TCP, port: 4954 }
+    # Public internet for git + package registries only (no private ranges).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }
+---
+# Postgres only accepts connections from Deep Scan pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deepscan-postgres-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: deepscan }
+      ports:
+        - { protocol: TCP, port: 5432 }
+---
+# The Trivy server only accepts scan requests from Deep Scan pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deepscan-trivy-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: trivy-server }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: deepscan }
+      ports:
+        - { protocol: TCP, port: 4954 }

