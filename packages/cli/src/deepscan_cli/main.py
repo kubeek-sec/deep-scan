@@ -97,6 +97,20 @@ def _build_parser() -> argparse.ArgumentParser:
     install_p = tools_sub.add_parser("install", help="Install a tool (or 'all').")
     install_p.add_argument("name", help="Tool name, or 'all'.")
     install_p.add_argument("--force", action="store_true", help="Reinstall if present.")
+
+    # `resolve`: generate missing lockfiles (npm/go/cargo/bundler) so SCA sees the
+    # full transitive tree. No project code is executed. Runs as its own step so
+    # it can be sandboxed (gVisor, no secrets, Nexus-only egress) apart from the
+    # scan. Package managers are pointed at the Nexus mirror.
+    r = sub.add_parser(
+        "resolve", help="Generate missing dependency lockfiles (no project code executed)."
+    )
+    r.add_argument("path", help="Project directory; lockfiles are written in place.")
+    r.add_argument("--nexus-url", default=None,
+                   help="Nexus mirror base URL (default: DEEPSCAN_NEXUS_URL).")
+    r.add_argument("--timeout", type=int, default=300,
+                   help="Per-ecosystem timeout in seconds (default 300).")
+    r.add_argument("--json", action="store_true", help="Emit results as JSON.")
     return parser
 
 
@@ -130,6 +144,34 @@ def _cmd_tools(args) -> int:
             print(f"Install failed: {exc}", file=sys.stderr)
             return _EXIT_ERROR
     return _EXIT_ERROR
+
+
+def _cmd_resolve(args) -> int:
+    from deepscan_core import config
+    from deepscan_core.resolve import ResolveStatus, resolve_dependencies
+
+    root = Path(args.path)
+    if not root.is_dir():
+        print(f"Not a directory: {root}", file=sys.stderr)
+        return _EXIT_ERROR
+    results = resolve_dependencies(
+        root, nexus_url=args.nexus_url or config.nexus_url(), timeout=args.timeout
+    )
+    if args.json:
+        import json
+
+        print(json.dumps([
+            {"ecosystem": r.ecosystem, "status": r.status.value,
+             "lockfile": r.lockfile, "reason": r.reason, "duration": round(r.duration, 2)}
+            for r in results
+        ]))
+    else:
+        if not results:
+            print("No supported package manifests found.", file=sys.stderr)
+        for r in results:
+            print(f" {r.ecosystem:<8} {r.status.value:<10} "
+                  f"{r.lockfile or '-':<20} {r.reason}")
+    return _EXIT_ERROR if any(r.status is ResolveStatus.FAILED for r in results) else _EXIT_OK
 
 
 def _cmd_scan(args) -> int:
@@ -210,6 +252,8 @@ def main(argv: list[str] | None = None) -> int:
         code = _cmd_scanners()
     elif args.command == "tools":
         code = _cmd_tools(args)
+    elif args.command == "resolve":
+        code = _cmd_resolve(args)
     else:
         code = _EXIT_ERROR
     metrics.flush()  # send any telemetry before this short-lived process exits

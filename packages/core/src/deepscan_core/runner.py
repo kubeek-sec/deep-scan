@@ -193,6 +193,40 @@ async def run_scan(
                 )
                 return result
 
+        # Pre-scan dependency resolution: generate missing lockfiles (offline, no
+        # project code executed) so the SCA scanner sees the full transitive
+        # tree. Gated behind DEEPSCAN_RESOLVE_DEPS; only worthwhile when an SCA
+        # scanner will run over a directory target. Best-effort - never breaks a
+        # scan. Runs in a thread (subprocess-bound) so the event loop stays free.
+        if (
+            target_path is not None
+            and config.resolve_deps_enabled()
+            and any(s.family == Family.SCA for s in producers)
+        ):
+            _emit("start", {"name": "resolve-deps"})
+            try:
+                from .resolve import ResolveStatus, resolve_dependencies
+
+                res = await asyncio.to_thread(
+                    resolve_dependencies,
+                    target_path,
+                    nexus_url=config.nexus_url(),
+                    scratch=Path(tmp) / "resolve",
+                )
+                gen = sum(1 for r in res if r.status is ResolveStatus.GENERATED)
+                _log.info(
+                    "resolve: %d lockfile(s) generated | %s",
+                    gen,
+                    ", ".join(f"{r.ecosystem}:{r.status.value}" for r in res) or "(none)",
+                )
+                _emit("finish", {"name": "resolve-deps", "status": "ok",
+                                 "duration": 0.0, "findings": 0,
+                                 "detail": f"{gen} lockfile(s) generated"})
+            except Exception as exc:  # noqa: BLE001 - resolution must never break a scan
+                _log.warning("resolve: skipped (%s)", exc)
+                _emit("finish", {"name": "resolve-deps", "status": "error",
+                                 "duration": 0.0, "findings": 0, "detail": str(exc)})
+
         results = await asyncio.gather(*(_bounded(s) for s in producers))
 
         consumer_results: list = []

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -235,6 +236,93 @@ async def run_adhoc_job(
         prog.fail_running(detail=f"{type(exc).__name__}: {exc}")
         await asyncio.to_thread(_persist_progress, job["id"], prog)
         raise
+
+
+# --------------------------------------------------------------------------- #
+# Split-pod stages. The monolithic ``run_adhoc_job`` above stays the single-
+# container path; these expose its two halves so a 3-stage sandbox pod can run
+# them in separate containers (materialize -> `deepscan resolve` -> scan) - the
+# untrusted resolve step then runs with NO secrets and Nexus-only egress. The
+# job is assumed already claimed by a dispatcher, which owns lease/heartbeat and
+# marks the job failed if the pod dies; these stages just do work + persist.
+#
+# NOTE: the scan half is intentionally near-identical to ``run_adhoc_job``'s;
+# they should be unified once the split path has integration coverage. Kept
+# separate for now so the working monolithic path is byte-for-byte unchanged.
+# --------------------------------------------------------------------------- #
+
+async def materialize_job(
+    job: dict[str, Any], dest_dir: str | Path, *,
+    allow_private: bool = True, allow_local_paths: bool = True,
+) -> str:
+    """Stage 1: materialize a claimed job's source into ``dest_dir`` (a shared
+    volume) and record where it landed. No scanning. Returns the scan target.
+
+    Unlike the monolithic path, a ``path`` target is COPIED into ``dest_dir``
+    rather than scanned in place: the resolve stage writes lockfiles into the
+    tree, and that must land on the throwaway copy, never the operator's dir."""
+    dest = Path(dest_dir)
+    scan_target = await materialize_adhoc(
+        job["target_type"], job["target"], dest,
+        allow_private=allow_private, allow_local_paths=allow_local_paths,
+    )
+    if job.get("target_type") == "path" and Path(scan_target).resolve() != dest.resolve():
+        await asyncio.to_thread(
+            shutil.copytree, scan_target, dest, symlinks=True, dirs_exist_ok=True
+        )
+        scan_target = str(dest)
+    if job.get("target_type") != "url":
+        await asyncio.to_thread(
+            store.set_source_location, job["id"],
+            source_path=scan_target, upload_id=job.get("upload_id"),
+        )
+    log.info("Materialized job %s -> %s", job["id"], scan_target)
+    return scan_target
+
+
+async def scan_and_persist_job(
+    job: dict[str, Any], scan_source: str, *, allow_private: bool = True,
+):
+    """Stage 3: scan an already-materialized (and resolved) source and persist
+    the report. The resolver ran as its own stage, so the in-scan resolver stays
+    off here (this container has no registry egress). Returns the ``Report``."""
+    started = time.monotonic()
+    prog = JobProgress()
+    prog.add_phase("report", "Write report")
+    cancel_event = threading.Event()
+    is_static = job.get("target_type") != "url"
+    report_dir = _report_dir(job)
+    commit = (
+        await asyncio.to_thread(fingerprint.git_commit, scan_source) if is_static else None
+    )
+    fp = None
+    with ramfs.staged_for_scan(scan_source) as scan_path:
+        if is_static:
+            fp = await asyncio.to_thread(fingerprint.fingerprint_tree, scan_path)
+        report = await run_scan_tracked(
+            job["id"], prog, scan_path,
+            cancel_event=cancel_event,
+            mode=Mode(job["mode"]) if job.get("mode") else None,
+            families=[Family(f) for f in (job.get("families") or [])] or None,
+            scanners=(job.get("scanners") or None),
+            raw_dir=report_dir / "raw",
+            allow_private_urls=allow_private,
+            surface=job.get("surface") or "jobs",
+        )
+    if cancel_event.is_set() or await asyncio.to_thread(store.is_cancelled, job["id"]):
+        raise _JobCancelled(job["id"])
+    if is_static and (fp or commit):
+        await asyncio.to_thread(
+            store.set_scan_identity, job["id"], fingerprint=fp, git_commit=commit
+        )
+    report.provenance = _provenance(job, str(scan_source), fingerprint=fp, git_commit=commit)
+    await asyncio.to_thread(write_report, report, report_dir)
+    await asyncio.to_thread(write_triage, report, report_dir)
+    store.persist_report(
+        job, report, report_dir=str(report_dir), duration=time.monotonic() - started
+    )
+    log.info("Scanned + persisted job %s", job["id"])
+    return report
 
 
 async def run_job_inline(

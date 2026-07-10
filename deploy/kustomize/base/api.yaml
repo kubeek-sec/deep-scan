@@ -1,0 +1,92 @@
+# REST API + dashboard - manual (adhoc) scan submission and report serving.
+#
+# Compose ships this as the `api` service; k8s omitted it (discovery-driven
+# deployments don't need it), but manual-API scans (and the benchmark script)
+# do. It only needs the DB - job status + summaries come from Postgres - so the
+# ClusterIP is enough; expose it via an overlay NodePort or `kubectl port-forward`.
+#
+# NOTE: serving report *files* (`/api/scans/{id}/report`) needs the same reports
+# volume the worker writes to; the workers here use an ephemeral emptyDir, so
+# that endpoint is empty in this topology. Job status/summary/findings (what the
+# dashboard and benchmark use) come from the DB and work without shared storage.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepscan-api
+  labels: { app.kubernetes.io/name: api, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: api }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: deepscan
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: api
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-api"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }
+          env:
+            - { name: DEEPSCAN_API_HOST, value: "0.0.0.0" }
+            - { name: DEEPSCAN_API_PORT, value: "8800" }
+            - { name: DEEPSCAN_DATA_DIR, value: /data }
+          ports: [{ containerPort: 8800, name: http }]
+          readinessProbe:
+            httpGet: { path: /api/healthz, port: 8800 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/healthz, port: 8800 }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        # Shared with the kruncher so the API can serve the report FILES the
+        # worker wrote (the job stores an absolute report_dir; both must see it at
+        # the same path). See the PVC below.
+        - { name: data, persistentVolumeClaim: { claimName: deepscan-data } }
+        - { name: tmp, emptyDir: { sizeLimit: 256Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepscan-api
+  labels: { app.kubernetes.io/name: api }
+spec:
+  selector: { app.kubernetes.io/name: api }
+  ports:
+    - { name: http, port: 8800, targetPort: 8800 }
+---
+# Shared reports + retained sources, written by the kruncher and read by the API
+# (report files) - both mount it at /data with DEEPSCAN_DATA_DIR=/data.
+#
+# ReadWriteOnce works when the API and kruncher land on the SAME node (always
+# true on single-node kind). On a MULTI-NODE cluster they may be scheduled apart,
+# so use a ReadWriteMany class (NFS/CephFS/EFS/Filestore) instead.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: deepscan-data
+  labels: { app.kubernetes.io/name: deepscan-data }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 5Gi } }

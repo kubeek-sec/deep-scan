@@ -62,6 +62,40 @@ RUN if [ "$INSTALL_CLAMAV" = "true" ]; then \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
+# Optional: language toolchains the dependency RESOLVER (`deepscan resolve`) uses
+# to generate missing lockfiles so Trivy SCA sees the full transitive tree.
+# node/npm is already installed above (CodeQL). This adds Go, Rust/Cargo and
+# Ruby/Bundler. Off by default (adds ~1.7 GB) - the resolver skips any ecosystem
+# whose tool is absent, so the lean image still works. Installed to /usr/local
+# (world-readable) so the non-root runtime user can use them.
+#
+# Rust is installed via rustup (not Debian's cargo) because the Nexus cargo
+# proxy is a *sparse* index, which needs a recent cargo. The rustup `cargo` shim
+# resolves its toolchain via RUSTUP_HOME - kept on PATH + in the env allowlist.
+#
+# NOTE (P2): the resolver runs untrusted package-manager code, so these toolchains
+# ultimately belong in the isolated gVisor resolver image, not a scanner-only one.
+# maven/.NET (for the P2 maven/nuget resolvers) are added when those land.
+ARG INSTALL_RESOLVERS=false
+ARG GO_VERSION=1.23.5
+ENV RUSTUP_HOME=/usr/local/rustup \
+    PATH="/usr/local/go/bin:/usr/local/cargo/bin:${PATH}"
+RUN if [ "$INSTALL_RESOLVERS" = "true" ]; then \
+        set -eux; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends ruby ruby-dev make gcc; \
+        gem install --no-document bundler; \
+        export CARGO_HOME=/usr/local/cargo; \
+        curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --no-modify-path --default-toolchain stable; \
+        chmod -R a+rX /usr/local/rustup /usr/local/cargo; \
+        arch="$(dpkg --print-architecture)"; \
+        curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${arch}.tar.gz" \
+            | tar -C /usr/local -xz; \
+        rm -rf /var/lib/apt/lists/*; \
+        go version; cargo --version; bundle --version; \
+    fi
+
 # Optionally bake the pinned, checksum-verified scanner binaries into the image
 # (SAST/SCA/secret/IaC). Skip with --build-arg INSTALL_TOOLS=false for a thin
 # image that installs tools at runtime into a mounted DEEPSCAN_TOOLS_DIR.

@@ -137,6 +137,21 @@ Then open:
 Scaling, Kubernetes/Kustomize, scan isolation and the shared Trivy server are in
 **[docs/deployment.md](docs/deployment.md)**.
 
+### Isolating untrusted scans (Kubernetes + gVisor)
+
+Scanning untrusted repositories is inherently dangerous: resolving a project's
+dependencies runs arbitrary package-manager code, and scanners parse hostile
+input. On Kubernetes the worker fleet is hardened (non-root, read-only rootfs,
+all Linux capabilities dropped, `RuntimeDefault` seccomp, no service-account
+token, and a default-deny egress fence) and can additionally run under **gVisor
+(runsc)** — a user-space kernel that contains a kernel-exploit "detonation" —
+through the `gvisor` RuntimeClass pinned to a tainted sandbox node pool. The
+riskiest step (dependency resolution) can run in its own container with **no
+secrets** and **egress restricted to an internal package mirror**, so a hostile
+build script sees no tokens and can't exfiltrate. Enable/verify it (kind included)
+per **[docs/sandboxing.md](docs/sandboxing.md)**; `./k8s-test.sh` spins up an
+ephemeral kind cluster to try it end-to-end.
+
 ## Documentation
 
 | Doc | What's inside |
@@ -146,7 +161,8 @@ Scaling, Kubernetes/Kustomize, scan isolation and the shared Trivy server are in
 | [docs/scanners.md](docs/scanners.md) | Full scanner catalog + `analysis`/`ai-analysis`/`codeql`/secrets/`plumber`/`reachable-deps` deep dives |
 | [docs/interfaces.md](docs/interfaces.md) | CLI, MCP server, REST API + web app, CI templates, logging |
 | [mcp-setup.md](mcp-setup.md) | Drop `.claude/` + `.mcp.json` into your own project to drive the MCP server — including pointing `.mcp.json` at a remote server's IP |
-| [docs/deployment.md](docs/deployment.md) | Continuous scanning, Docker Compose, Kubernetes/Kustomize, isolation |
+| [docs/deployment.md](docs/deployment.md) | Continuous scanning, Docker Compose, Kubernetes/Kustomize, kind testing, data retention |
+| [docs/sandboxing.md](docs/sandboxing.md) | Isolating untrusted scans: hardening, the Nexus mirror, gVisor/runsc install + verify, the 3-stage sandbox |
 | [docs/development.md](docs/development.md) | Dev setup, tests, the guinea-pig fixtures |
 | [docs/testing.md](docs/testing.md) | How to run test e2e |
 

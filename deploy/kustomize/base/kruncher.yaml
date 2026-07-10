@@ -54,6 +54,12 @@ spec:
             # ConfigMap/volume here to ship custom YARA/gitleaks/opengrep/... rules.
             - name: DEEPSCAN_CONFIG_DIR
               value: /config
+            # Retained sources + report files, on the SHARED /data volume (PVC)
+            # so the API can serve the reports the worker writes. MUST be writable
+            # (the rootfs is read-only, so the default $HOME/.local/share/deepscan
+            # would EROFS). Heavy scratch stays on the local /work emptyDir above.
+            - name: DEEPSCAN_DATA_DIR
+              value: /data
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -65,7 +71,10 @@ spec:
             - { name: work, mountPath: /work }
             - { name: tmp, mountPath: /tmp }
             - { name: ramscan, mountPath: /ramscan }
+            - { name: data, mountPath: /data }   # shared reports/sources (API reads these)
       volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: deepscan-data }
         - name: work
           emptyDir: { sizeLimit: 4Gi }
         - name: tmp

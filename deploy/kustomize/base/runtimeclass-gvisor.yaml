@@ -1,0 +1,27 @@
+# gVisor (runsc) runtime for the scan/resolve sandbox.
+#
+# The ephemeral scan pod runs untrusted code: it resolves dependencies (package
+# managers running arbitrary build/postinstall logic) and scans hostile source.
+# Plain containers share the host kernel; gVisor interposes a user-space kernel,
+# so a kernel-exploit "detonation" is contained. This is the single biggest
+# isolation upgrade for untrusted workloads.
+#
+# PREREQUISITE: the gVisor runtime must be installed on the (tainted) sandbox
+# nodes and registered with the container runtime as the handler named below
+# (containerd: `plugins."io.containerd.runtime.v1.linux".runtimes.runsc`). On GKE
+# use the "gVisor" node-pool sandbox option, which pre-registers `runsc`.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+# Schedule gVisor pods onto the sandbox node pool only (it is tainted so normal
+# workloads stay off it, and a sandbox escape can't land next to Postgres/secrets).
+scheduling:
+  nodeSelector:
+    deepscan/sandbox: "true"
+  tolerations:
+    - key: deepscan/sandbox
+      operator: Equal
+      value: "true"
+      effect: NoSchedule

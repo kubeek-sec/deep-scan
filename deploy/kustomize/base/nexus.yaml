@@ -1,0 +1,89 @@
+# Nexus Repository (OSS) - pull-through mirror for language package registries.
+#
+# WHY: the dependency resolver (deepscan resolve) generates missing lockfiles by
+# running package managers. Pointing those managers at Nexus instead of the
+# public registries means (a) the sandbox needs NO direct internet - only Nexus
+# does - so a hostile build script can't exfiltrate, and (b) Nexus caches the
+# artifacts (incl. Maven parent POMs), killing the repo.maven.apache.org 429s.
+#
+# Nexus is the ONLY workload here that legitimately reaches the internet; the
+# `deepscan/egress: true` label opts it into the egress fence (networkpolicy.yaml).
+# Tightening the fence so ONLY Nexus (not the workers) reaches the internet, and
+# workers reach only Nexus, is the P2 step - see networkpolicy.yaml TODO.
+#
+# NOTE: pin 3.94.0 verified - boots and provisions all 7 proxy formats including
+# cargo (Rust). See deploy/nexus/README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus
+  labels: { app.kubernetes.io/name: nexus, app.kubernetes.io/part-of: deepscan }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # single RWO PVC - never two pods on it at once
+  selector:
+    matchLabels: { app.kubernetes.io/name: nexus }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nexus
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"        # the one workload allowed to the internet
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 200                 # the image's built-in `nexus` user
+        fsGroup: 200                   # so the PVC is writable
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: nexus
+          image: sonatype/nexus3:3.94.0
+          env:
+            # Cap the JVM: the default (~2.7 GiB heap) is sized for a full
+            # artifact server; a proxy-only cache runs comfortably far smaller.
+            - { name: INSTALL4J_ADD_VM_PARAMS,
+                value: "-Xms1200m -Xmx1200m -XX:MaxDirectMemorySize=1g -Djava.util.prefs.userRoot=/nexus-data/javaprefs" }
+          ports: [{ containerPort: 8081, name: http }]
+          readinessProbe:
+            httpGet: { path: /service/rest/v1/status, port: 8081 }
+            initialDelaySeconds: 60      # Nexus is slow to boot (~1-2 min)
+            periodSeconds: 15
+            failureThreshold: 40
+          livenessProbe:
+            httpGet: { path: /service/rest/v1/status, port: 8081 }
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Nexus is NOT designed for a read-only rootfs (it writes under
+            # /opt/sonatype work dirs at boot); keep it writable but drop caps.
+            readOnlyRootFilesystem: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "500m", memory: "1536Mi" }
+            limits: { cpu: "2", memory: "3Gi" }
+          volumeMounts:
+            - { name: data, mountPath: /nexus-data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: nexus-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nexus-data
+  labels: { app.kubernetes.io/name: nexus }
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus
+  labels: { app.kubernetes.io/name: nexus }
+spec:
+  selector: { app.kubernetes.io/name: nexus }
+  ports:
+    - { name: http, port: 8081, targetPort: 8081 }

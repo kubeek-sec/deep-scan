@@ -14,5 +14,9 @@ data:
   DEEPSCAN_WAIT_FOR_DB: "true"
   # Trivy client/server mode: workers offload vuln matching here, no DB download.
   DEEPSCAN_TRIVY_SERVER: "http://trivy-server:4954"
+  # Pull-through mirror for language package registries. The dependency resolver
+  # points package managers here (npm/pip/go/cargo/gem/maven) so the sandbox
+  # needs no direct internet and Maven parent-POM 429s disappear (cached here).
+  DEEPSCAN_NEXUS_URL: "http://nexus:8081"
 # The `deepscan-secrets` Secret (DB password + connector tokens) is built by the
 # kustomization's secretGenerator from base/secrets.env - see that file.

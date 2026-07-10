@@ -1,0 +1,50 @@
+# FQDN-aware egress for the scan/resolve sandbox - the "mirror-only" realization.
+#
+# Plain Kubernetes NetworkPolicy filters by CIDR, not hostname, so it cannot say
+# "only Nexus and the git host." This CiliumNetworkPolicy does, closing the
+# exfiltration path: a hostile dependency build script can reach the mirror and
+# nothing else on the internet.
+#
+# OPT-IN: requires Cilium as the CNI (provides the CRD + FQDN enforcement) and is
+# therefore NOT in the base kustomization. Add it via an overlay once Cilium is
+# in place. Pair it with removing the broad `0.0.0.0/0:443` rule from
+# networkpolicy.yaml so this becomes the only egress path.
+#
+# Applies to the ephemeral scan pods (they carry deepscan/egress=true).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: deepscan-sandbox-egress
+spec:
+  endpointSelector:
+    matchLabels:
+      deepscan/egress: "true"
+  egress:
+    # DNS (needed so the FQDN rules below can resolve). Restrict to kube-dns and
+    # let Cilium learn allowed names from the toFQDNs rules.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports: [{ port: "53", protocol: ANY }]
+          rules:
+            dns:
+              - matchPattern: "*"
+    # In-cluster services: Nexus (the mirror) and Postgres (claim jobs).
+    - toEndpoints:
+        - matchLabels: { app.kubernetes.io/name: nexus }
+      toPorts:
+        - ports: [{ port: "8081", protocol: TCP }]
+    - toEndpoints:
+        - matchLabels: { app.kubernetes.io/name: postgres }
+      toPorts:
+        - ports: [{ port: "5432", protocol: TCP }]
+    # Git hosts for cloning the target (metadata resolution goes via Nexus, so no
+    # package-registry hosts are allowed here). Trim/extend to your connectors.
+    - toFQDNs:
+        - matchName: "github.com"
+        - matchPattern: "*.github.com"
+        - matchName: "gitlab.com"
+      toPorts:
+        - ports: [{ port: "443", protocol: TCP }]

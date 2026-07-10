@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -24,7 +25,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import config, db, discovery, scheduler, store, worker
+from . import config, db, dispatcher, discovery, scheduler, store, worker
 from .connectors import available
 
 _OK, _ERR = 0, 2
@@ -164,6 +165,72 @@ def _cmd_run_one(args) -> int:
     return _OK if did else 3
 
 
+def _cmd_materialize(args) -> int:
+    """Stage 1 of the split sandbox pod: materialize a claimed job's source."""
+    from deepscan_jobs import store as jobs_store
+    from deepscan_jobs.worker import materialize_job
+
+    job = jobs_store.get_job(args.job_id)
+    if job is None:
+        print(f"No such job: {args.job_id}", file=sys.stderr)
+        return _ERR
+    path = asyncio.run(materialize_job(
+        job, args.dest,
+        allow_private=config.allow_private_targets(),
+        allow_local_paths=config.allow_local_paths(),
+    ))
+    print(f"Materialized job {args.job_id} -> {path}")
+    return _OK
+
+
+def _cmd_scan_only(args) -> int:
+    """Stage 3 of the split sandbox pod: scan a materialized dir and persist."""
+    from deepscan_jobs import store as jobs_store
+    from deepscan_jobs.worker import scan_and_persist_job
+
+    job = jobs_store.get_job(args.job_id)
+    if job is None:
+        print(f"No such job: {args.job_id}", file=sys.stderr)
+        return _ERR
+    asyncio.run(scan_and_persist_job(
+        job, args.src, allow_private=config.allow_private_targets(),
+    ))
+    print(f"Scanned + persisted job {args.job_id}")
+    return _OK
+
+
+def _cmd_prune(args) -> int:
+    from deepscan_jobs import retention
+
+    targets = tuple(t.strip() for t in args.targets.split(",") if t.strip())
+    max_age = args.max_age_days
+    # A safe default so a bare `prune` (e.g. the CronJob) still does something
+    # sensible instead of nothing: keep 30 days unless any criterion is given.
+    if max_age is None and args.max_size_gb is None and args.min_free_gb is None:
+        max_age = 30.0
+    res = retention.prune(
+        max_age_days=max_age, max_size_gb=args.max_size_gb,
+        min_free_gb=args.min_free_gb, targets=targets, dry_run=args.dry_run,
+    )
+    verb = "would delete" if res.dry_run else "deleted"
+    for p in res.deleted_paths:
+        print(f"  {verb}: {p}")
+    print(f"prune: {res.scanned} dir(s) scanned, {res.protected} protected (active), "
+          f"{verb} {res.deleted} ({res.freed_gib:.2f} GiB).")
+    return _OK
+
+
+def _cmd_dispatch(args) -> int:
+    dispatcher.run_loop()
+    return _OK
+
+
+def _cmd_dispatch_one(args) -> int:
+    did = dispatcher.dispatch_one()
+    print("Dispatched one job." if did else "No job available.")
+    return _OK if did else 3
+
+
 def _cmd_run(args) -> int:
     """Single process: a worker loop plus an embedded scheduler thread."""
     interval = config.scheduler_interval_seconds()
@@ -273,6 +340,36 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("run-one", help="Process exactly one job, then exit (ephemeral).")
     sub.add_parser("run", help="Worker loop + embedded scheduler in one process.")
 
+    # Split-pod stages (the 3-stage sandbox pod: materialize -> resolve -> scan).
+    # The job must already be claimed by a dispatcher; these do one stage each.
+    mat = sub.add_parser(
+        "materialize", help="Stage 1: fetch a claimed job's source into a dir (no scan)."
+    )
+    mat.add_argument("job_id", type=int)
+    mat.add_argument("dest", help="Directory to materialize the source into (shared volume).")
+    so = sub.add_parser(
+        "scan-only", help="Stage 3: scan an already-materialized dir and persist the report."
+    )
+    so.add_argument("job_id", type=int)
+    so.add_argument("src", help="Directory holding the materialized (and resolved) source.")
+
+    sub.add_parser(
+        "dispatch", help="Claim jobs and run each through the isolated 3-stage flow (loop)."
+    )
+    sub.add_parser(
+        "dispatch-one", help="Dispatch exactly one job through the isolated stages, then exit."
+    )
+
+    pr = sub.add_parser(
+        "prune", help="Delete old retained sources/reports/uploads (by age, size cap, free space)."
+    )
+    pr.add_argument("--max-age-days", type=float, help="Delete job dirs older than N days.")
+    pr.add_argument("--max-size-gb", type=float, help="Cap total data size; evict oldest until under.")
+    pr.add_argument("--min-free-gb", type=float, help="Ensure at least F GiB free; evict oldest until met.")
+    pr.add_argument("--targets", default="reports,sources,uploads",
+                    help="Comma-separated subtrees to sweep (default: all).")
+    pr.add_argument("--dry-run", action="store_true", help="Show what would be deleted, delete nothing.")
+
     jobs = sub.add_parser("jobs", help="List jobs (both queues by default).")
     jobs.add_argument("--status", help="Filter by status.")
     jobs.add_argument(
@@ -301,6 +398,11 @@ _HANDLERS = {
     "worker": _cmd_worker,
     "run-one": _cmd_run_one,
     "run": _cmd_run,
+    "materialize": _cmd_materialize,
+    "scan-only": _cmd_scan_only,
+    "dispatch": _cmd_dispatch,
+    "dispatch-one": _cmd_dispatch_one,
+    "prune": _cmd_prune,
     "jobs": _cmd_jobs,
     "job": _cmd_job,
     "status": _cmd_status,

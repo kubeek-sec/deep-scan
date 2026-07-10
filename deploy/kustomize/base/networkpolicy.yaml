@@ -79,3 +79,26 @@ spec:
             matchLabels: { app.kubernetes.io/part-of: deepscan }
       ports:
         - { protocol: TCP, port: 4954 }
+---
+# The Nexus mirror only accepts requests from Deep Scan pods (the resolver
+# points package managers here instead of the public registries).
+#
+# TODO (P2 - strong isolation): once the resolver runs in its own sandbox, flip
+# the egress fence so ONLY Nexus carries the `deepscan/egress` label (the sole
+# workload with internet), and give the resolver pods an egress policy that
+# permits Nexus (TCP 8081) + DNS ONLY - no public-internet rule at all. That
+# closes the exfiltration path for hostile dependency build scripts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deepscan-nexus-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: nexus }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: deepscan }
+      ports:
+        - { protocol: TCP, port: 8081 }

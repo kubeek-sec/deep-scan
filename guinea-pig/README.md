@@ -60,5 +60,3 @@ proof commands.
 | **C#** | [DapperLib/Dapper](https://github.com/DapperLib/Dapper) | [dotnet/efcore](https://github.com/dotnet/efcore) | [dotnet/roslyn](https://github.com/dotnet/roslyn) |
 | **PHP (+blade)** | [slimphp/Slim](https://github.com/slimphp/Slim) | [monicahq/monica](https://github.com/monicahq/monica) | [laravel/framework](https://github.com/laravel/framework) |
 | **Bash** | [nvh/nvm](https://github.com/nvm-sh/nvm) | [bats-core/bats-core](https://github.com/bats-core/bats-core) | [ohmyzsh/ohmyzsh](https://github.com/ohmyzsh/ohmyzsh) |
-
-Q

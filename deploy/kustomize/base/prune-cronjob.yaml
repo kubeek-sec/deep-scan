@@ -1,0 +1,56 @@
+# Nightly retention sweep of the shared data volume (retained sources +
+# reports + uploads). Deletes dirs older than --max-age-days AND keeps the whole
+# store under --max-size-gb (oldest-first), never touching non-terminal jobs.
+# Tune the args/schedule to your disk. Mounts the same deepscan-data PVC the API
+# and kruncher write to, and needs the DB (to skip active jobs).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: deepscan-prune
+  labels: { app.kubernetes.io/name: prune, app.kubernetes.io/part-of: deepscan }
+spec:
+  schedule: "0 3 * * *"        # 03:00 daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: prune, app.kubernetes.io/part-of: deepscan }
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: prune
+              image: kubeek-sec/deepscan:latest
+              # Keep 14 days, and cap the whole store at 20 GiB (evict oldest).
+              # Add --min-free-gb N to also guard free space; --dry-run to preview.
+              command: ["deepscan-kruncher", "prune", "--max-age-days", "14", "--max-size-gb", "20"]
+              envFrom:
+                - configMapRef: { name: deepscan-config }
+                - secretRef: { name: deepscan-secrets }      # DB (skip active jobs)
+              env:
+                # Same shared volume the API + kruncher use (they set this too).
+                - { name: DEEPSCAN_DATA_DIR, value: /data }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+              resources:
+                requests: { cpu: "50m", memory: "128Mi" }
+                limits: { cpu: "500m", memory: "512Mi" }
+              volumeMounts:
+                - { name: data, mountPath: /data }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: data
+              persistentVolumeClaim: { claimName: deepscan-data }
+            - { name: tmp, emptyDir: { sizeLimit: 64Mi } }

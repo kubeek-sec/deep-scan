@@ -578,6 +578,17 @@ def get_job(job_id: int) -> dict[str, Any] | None:
     return db.fetchone("SELECT * FROM scan_jobs WHERE id = %s", (job_id,))
 
 
+def active_job_ids() -> set[int]:
+    """Ids of jobs that are NOT in a terminal state (queued/running/...). Their
+    retained sources/reports must never be pruned - a scan may still be using
+    them, or a result is about to be written."""
+    rows = db.fetchall(
+        "SELECT id FROM scan_jobs "
+        "WHERE status NOT IN ('done','failed','cancelled','superseded')"
+    )
+    return {r["id"] for r in rows}
+
+
 def get_job_attempts(job_id: int) -> list[dict[str, Any]]:
     return db.fetchall(
         "SELECT * FROM job_attempts WHERE job_id = %s ORDER BY attempt", (job_id,)

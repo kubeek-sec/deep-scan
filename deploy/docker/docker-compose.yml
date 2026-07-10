@@ -19,6 +19,8 @@ x-app-image: &app-image
       INSTALL_CISCO_SKILL: "true"
       INSTALL_CHECKOV: "true"
       INSTALL_NUCLEI_TEMPLATES: "true"
+      # Go / Rust-Cargo / Ruby-Bundler toolchains for the dependency resolver.
+      INSTALL_RESOLVERS: "true"
   image: kubeek-sec/deepscan:latest
 
 x-db-env: &db-env
@@ -93,6 +95,48 @@ services:
     restart: unless-stopped
     networks: [data, egress]   # egress: pull the DB; data: serve the workers
 
+  # Pull-through mirror for language package registries. The dependency resolver
+  # points package managers here so the scan sandbox needs no direct internet and
+  # Maven parent-POM 429s vanish (cached here). The ONLY component with egress.
+  # Pinned to 3.94.0: verified to boot + provision all 7 formats incl. cargo.
+  nexus:
+    image: sonatype/nexus3:3.94.0
+    environment:
+      # Dev/single-host convenience: skip the random first-boot password so the
+      # provisioner can log in. Initial admin password becomes `admin123` - CHANGE
+      # IT (and set NEXUS_ADMIN_PASSWORD) for anything internet-adjacent.
+      NEXUS_SECURITY_RANDOMPASSWORD: "false"
+      INSTALL4J_ADD_VM_PARAMS: "-Xms1200m -Xmx1200m -XX:MaxDirectMemorySize=1g"
+    volumes:
+      - nexusdata:/nexus-data
+    healthcheck:
+      # the nexus3 image ships curl, not wget
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8081/service/rest/v1/status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 90s        # Nexus boots slowly (~1-2 min)
+    ports:
+      - "${NEXUS_PORT:-8081}:8081"   # admin UI / registry endpoint
+    restart: unless-stopped
+    networks: [data, egress]   # egress: proxy the public registries; data: serve resolvers
+
+  # One-shot: create the proxy repos in Nexus once it is healthy (idempotent).
+  nexus-provision:
+    image: python:3.13-slim
+    command: ["python", "/provision/provision_repos.py"]
+    environment:
+      NEXUS_URL: http://nexus:8081
+      NEXUS_USER: admin
+      NEXUS_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-admin123}
+    volumes:
+      - ../nexus:/provision:ro
+    depends_on:
+      nexus:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+
   # The cheap half. The advisory lock makes >1 replica safe; 1 is enough.
   scheduler:
     <<: *app-image
@@ -149,6 +193,9 @@ services:
       DEEPSCAN_CONFIG_DIR: /data/config
       # Offload Trivy SCA vuln matching to the shared server (no DB download).
       DEEPSCAN_TRIVY_SERVER: http://trivy-server:4954
+      # Pull-through mirror the dependency resolver points package managers at
+      # (npm/pip/go/cargo/gem/maven) - keeps the sandbox off the public internet.
+      DEEPSCAN_NEXUS_URL: http://nexus:8081
       # --- Optional ai-analysis triage scanner (off by default) --------------
       # Build the image with --build-arg INSTALL_CLAUDE=true, then enable it and
       # point it at a model. Tokens/endpoint come from .env (env_file above):
@@ -169,6 +216,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
+    # P2 strong isolation: run the worker under gVisor for a user-space-kernel
+    # boundary around untrusted resolve/scan code. Requires runsc installed on the
+    # host and registered with the Docker daemon (`/etc/docker/daemon.json`
+    # runtimes.runsc). Uncomment once available; compose has no k8s RuntimeClass.
+    # runtime: runsc
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -303,6 +355,7 @@ services:
 volumes:
   pgdata:
   trivycache:   # Trivy vulnerability DB, downloaded once by trivy-server
+  nexusdata:    # Nexus blobstore + cached proxied artifacts
 
 networks:
   data:      # app <-> postgres / trivy-server

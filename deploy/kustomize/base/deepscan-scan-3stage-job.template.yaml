@@ -1,0 +1,111 @@
+# Three-stage sandboxed scan pod - the full 2-zone isolation.
+#
+# A dispatcher CLAIMS one queued job (owning its lease/heartbeat and marking it
+# failed if this pod dies), then creates one of these pods with DEEPSCAN_JOB_ID
+# set. The three stages share the source over an emptyDir; each runs a distinct
+# command with distinct privileges:
+#
+#   initContainer clone    -> `materialize`  secrets: git token    egress: git host
+#   initContainer resolve  -> `deepscan resolve`   secrets: NONE    egress: Nexus only
+#   container     scan     -> `scan-only`    secrets: DB/trivy      egress: none
+#
+# Why this isolates secrets even in ONE pod: containers have separate
+# environments and separate PID namespaces, so the untrusted code the resolver
+# runs (npm/cargo/... build logic) cannot read the git/DB secrets that live in
+# the OTHER containers' envs or in their /proc. The resolver is the only stage
+# that executes untrusted code, and it has no secrets and Nexus-only egress.
+#
+# This is a TEMPLATE (not applied by the kustomization): the dispatcher fills in
+# DEEPSCAN_JOB_ID and creates it per claimed job. It needs the RuntimeClass
+# (runtimeclass-gvisor.yaml), the Nexus mirror, and a shared reports volume.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: deepscan-scan3-
+  labels: { app.kubernetes.io/name: kruncher-sandbox, app.kubernetes.io/part-of: deepscan }
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kruncher-sandbox
+        app.kubernetes.io/part-of: deepscan
+        deepscan/egress: "true"    # pod-level; Cilium FQDN policy narrows it to git+Nexus
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      runtimeClassName: gvisor     # user-space kernel; pins to the sandbox node pool
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # Stage 1 - CLONE. Has the git token; fetches into the shared /src volume.
+        - name: clone
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-kruncher", "materialize", "$(DEEPSCAN_JOB_ID)", "/src"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }   # DB (read job) + git token
+          env:
+            - { name: DEEPSCAN_JOB_ID, value: "REPLACE_WITH_JOB_ID" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: src, mountPath: /src }
+            - { name: tmp, mountPath: /tmp }
+        # Stage 2 - RESOLVE. THE untrusted step: runs package managers. NO secretRef
+        # (no git/DB/token env at all); only the ConfigMap for DEEPSCAN_NEXUS_URL.
+        - name: resolve
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan", "resolve", "/src"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }  # DEEPSCAN_NEXUS_URL only; NO secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: src, mountPath: /src }
+            - { name: tmp2, mountPath: /tmp }
+      containers:
+        # Stage 3 - SCAN. Trusted code over the resolved tree; persists to the DB.
+        # Resolver stays OFF here (already done) and this stage needs no registry.
+        - name: scan
+          image: kubeek-sec/deepscan:latest
+          command: ["deepscan-kruncher", "scan-only", "$(DEEPSCAN_JOB_ID)", "/src"]
+          envFrom:
+            - configMapRef: { name: deepscan-config }
+            - secretRef: { name: deepscan-secrets }    # DB (persist) + trivy
+          env:
+            - { name: DEEPSCAN_JOB_ID, value: "REPLACE_WITH_JOB_ID" }
+            - { name: DEEPSCAN_RESOLVE_DEPS, value: "false" }
+            - { name: DEEPSCAN_SCAN_RAMFS_DIR, value: /ramscan }
+            - { name: DEEPSCAN_DATA_DIR, value: /data }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi", ephemeral-storage: "4Gi" }
+          volumeMounts:
+            - { name: src, mountPath: /src }
+            - { name: tmp3, mountPath: /tmp }
+            - { name: ramscan, mountPath: /ramscan }
+            - { name: data, mountPath: /data }
+      volumes:
+        - { name: src, emptyDir: { sizeLimit: 4Gi } }   # shared source + lockfiles
+        - { name: tmp, emptyDir: { sizeLimit: 256Mi } }
+        - { name: tmp2, emptyDir: { sizeLimit: 256Mi } }
+        - { name: tmp3, emptyDir: { sizeLimit: 256Mi } }
+        - { name: ramscan, emptyDir: { medium: Memory, sizeLimit: 2Gi } }
+        # Reports must outlive the pod so the API can serve them - a shared RWX
+        # claim (like the compose ./data/app volume). Provide one in your overlay.
+        - name: data
+          persistentVolumeClaim: { claimName: deepscan-data }

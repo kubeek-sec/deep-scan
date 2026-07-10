@@ -203,6 +203,28 @@ def trivy_server() -> str | None:
     return raw.strip() if raw and raw.strip() else None
 
 
+def nexus_url() -> str | None:
+    """Base URL of the Nexus pull-through mirror, if deployed.
+
+    The dependency resolver points package managers here instead of the public
+    registries, so the scan sandbox needs no direct internet and Maven parent-POM
+    429s are absorbed by Nexus's cache. ``None`` when unset (resolvers then fall
+    back to the public registries, or skip if that is not permitted)."""
+    raw = get("DEEPSCAN_NEXUS_URL")
+    return raw.strip().rstrip("/") if raw and raw.strip() else None
+
+
+def resolve_deps_enabled(default: bool = False) -> bool:
+    """Whether the pre-scan dependency resolver runs: it generates missing
+    lockfiles (without executing project code) so Trivy SCA sees the full
+    transitive tree, fully offline. Off by default during rollout; enable with
+    ``DEEPSCAN_RESOLVE_DEPS=true``."""
+    value = get("DEEPSCAN_RESOLVE_DEPS")
+    if value is None:
+        return default
+    return value.strip().lower() not in _FALSEY
+
+
 # --- LLM (Claude) scanner -------------------------------------------------- #
 
 def claude_bin() -> str:

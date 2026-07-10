@@ -11,6 +11,18 @@
 # service-account token, read-only rootfs, all caps dropped, RuntimeDefault
 # seccomp, tight CPU/mem/ephemeral-storage limits, an activeDeadline, and a
 # short TTL so finished pods are reaped.
+#
+# P2 strong isolation:
+#  - runtimeClassName: gvisor  -> user-space kernel; contains a detonation. Its
+#    scheduling block (runtimeclass-gvisor.yaml) pins the pod to the tainted
+#    sandbox node pool, away from Postgres/secrets.
+#  - the dependency resolver is turned on (DEEPSCAN_RESOLVE_DEPS) and pointed at
+#    Nexus, so package managers never touch the public internet.
+#
+# REMAINING (needs app restructuring, tracked): `run-one` clones + resolves +
+# scans in ONE container, so it still holds `deepscan-secrets`. The clean 2-zone
+# split - a no-secrets, Nexus-only-egress resolver container feeding a no-egress
+# scan container - lands when `deepscan resolve` is invoked as its own pod/step.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,6 +41,7 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
+      runtimeClassName: gvisor   # user-space kernel; also pins to the sandbox pool
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -47,6 +60,10 @@ spec:
             # Scanners run over a RAM copy of the source (in-memory emptyDir below).
             - name: DEEPSCAN_SCAN_RAMFS_DIR
               value: /ramscan
+            # Generate missing lockfiles (offline, via Nexus) so SCA sees the full
+            # transitive tree. DEEPSCAN_NEXUS_URL comes from the ConfigMap above.
+            - name: DEEPSCAN_RESOLVE_DEPS
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

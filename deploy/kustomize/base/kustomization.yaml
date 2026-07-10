@@ -13,13 +13,19 @@ resources:
   - config.yaml
   - postgres.yaml
   - trivy-server.yaml
+  - nexus.yaml
   - migrate-job.yaml
   - scheduler.yaml
   - kruncher.yaml
+  - api.yaml
   - admin.yaml
+  - prune-cronjob.yaml
   - networkpolicy.yaml
+  - runtimeclass-gvisor.yaml
   # kruncher-ephemeral-job.template.yaml is intentionally NOT listed:
   # it is a per-scan template, created on demand, not a standing resource.
+  # ciliumnetworkpolicy-egress.yaml is also NOT listed: it needs the Cilium CRDs
+  # and is opt-in (see the file). Add it to an overlay once Cilium is in place.
 
 # The DB password + connector tokens (referenced by each scope's token_env) are
 # generated into Secret/deepscan-secrets from secrets.env. Seed it from your

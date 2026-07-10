@@ -1,0 +1,78 @@
+# gVisor (runsc) node installer for SELF-MANAGED containerd clusters.
+#
+# ⚠️  REVIEW BEFORE APPLYING. This runs a PRIVILEGED pod on every node labelled
+#     `deepscan/sandbox=true` and MUTATES that node's containerd (drops runsc +
+#     the shim on the host, appends a `runsc` runtime, restarts containerd). A
+#     wrong containerd config layout/version can disrupt the node. Test on one
+#     node first (label a single node), and prefer the managed path where you can:
+#
+#       GKE:  gcloud container node-pools create sandbox --cluster <c> \
+#               --sandbox type=gvisor --node-labels deepscan/sandbox=true \
+#               --node-taints deepscan/sandbox=true:NoSchedule
+#             (GKE installs runsc AND registers the `gvisor` RuntimeClass for you -
+#              this DaemonSet is NOT needed there.)
+#
+# Assumes: containerd with a v2 CRI config at /etc/containerd/config.toml and
+# systemd-managed containerd. `systrap` platform is used so it works without KVM;
+# switch to `kvm` on bare-metal/VM nodes that expose /dev/kvm for better perf.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gvisor-node-installer
+  namespace: deepscan
+  labels: { app.kubernetes.io/name: gvisor-installer, app.kubernetes.io/part-of: deepscan }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: gvisor-installer }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: gvisor-installer, app.kubernetes.io/part-of: deepscan }
+    spec:
+      # Only the sandbox pool; tolerate its taint so this installer can land there.
+      nodeSelector: { deepscan/sandbox: "true" }
+      tolerations:
+        - { key: deepscan/sandbox, operator: Equal, value: "true", effect: NoSchedule }
+      hostPID: true    # so nsenter can reach the host's systemd (PID 1)
+      containers:
+        - name: installer
+          image: debian:12-slim
+          securityContext:
+            privileged: true
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              command -v curl >/dev/null || { apt-get update && apt-get install -y --no-install-recommends curl ca-certificates util-linux; }
+              case "$(uname -m)" in x86_64) A=x86_64;; aarch64|arm64) A=aarch64;; *) A=$(uname -m);; esac
+              URL="https://storage.googleapis.com/gvisor/releases/release/latest/${A}"
+              for f in runsc containerd-shim-runsc-v1; do
+                curl -fsSL "${URL}/${f}" -o "/host/usr/local/bin/${f}"
+                chmod a+rx "/host/usr/local/bin/${f}"
+              done
+              printf '[runsc_config]\n  platform = "systrap"\n' > /host/etc/containerd/runsc.toml
+              if ! grep -q 'runtimes.runsc' /host/etc/containerd/config.toml; then
+                # printf (not a heredoc) so no column-0 terminator is needed inside
+                # this YAML block scalar. Leading whitespace is fine for TOML.
+                {
+                  printf '\n[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]\n'
+                  printf '  runtime_type = "io.containerd.runsc.v1"\n'
+                  printf '  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]\n'
+                  printf '    TypeUrl = "io.containerd.runsc.v1.options"\n'
+                  printf '    ConfigPath = "/etc/containerd/runsc.toml"\n'
+                } >> /host/etc/containerd/config.toml
+                echo "runsc runtime registered; restarting containerd..."
+                nsenter --target 1 --mount --uts --ipc --net --pid -- systemctl restart containerd
+              else
+                echo "runsc runtime already present; leaving containerd as-is."
+              fi
+              echo "gVisor ready on $(hostname). Idling."
+              exec sleep infinity
+          volumeMounts:
+            - { name: host-bin, mountPath: /host/usr/local/bin }
+            - { name: host-containerd, mountPath: /host/etc/containerd }
+          resources:
+            requests: { cpu: "20m", memory: "32Mi" }
+            limits: { cpu: "200m", memory: "128Mi" }
+      volumes:
+        - { name: host-bin, hostPath: { path: /usr/local/bin } }
+        - { name: host-containerd, hostPath: { path: /etc/containerd } }
