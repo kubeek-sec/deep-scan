@@ -8,6 +8,7 @@ start. The detailed reference lives here:
 | [overview.md](overview.md) | Screenshot tour of the main functions: the agent/IDE MCP server, the kruncher/ASPM dashboard, the self-serve web app |
 | [architecture.md](architecture.md) | Monorepo layout, the uv workspace, the two-phase analysis model, how to add a scanner, the security model, telemetry |
 | [scanners.md](scanners.md) | Full scanner catalog + deep dives: `analysis` code-graph, `codeql`, secret engines, `plumber`, `reachable-deps`, `ai-analysis` |
+| [severity-mapping.md](severity-mapping.md) | How each scanner's native severity is normalized to Deep Scan's critical/high/medium/low/info scale, and what each level means concretely |
 | [interfaces.md](interfaces.md) | CLI, MCP server, REST API + web app, CI-template generator, logging |
 | [mcp-setup.md](mcp-setup.md) | Drop `.claude/` + `.mcp.json` into your own project to drive the MCP server — including pointing `.mcp.json` at a remote server's IP |
 | [deployment.md](deployment.md) | Continuous scanning (connectors, kruncher, ASPM), Docker Compose scaling, Kubernetes/Kustomize, scan isolation, shared Trivy server |

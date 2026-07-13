@@ -3,7 +3,9 @@
 Every scanner emits the same normalized `Finding`s, so they all flow through
 dedup, the four report formats (JSON/Markdown/HTML/SARIF), the API/kruncher and
 the ASPM dashboard. Adding one is mechanical - see
-[architecture.md](architecture.md#adding-a-scanner).
+[architecture.md](architecture.md#adding-a-scanner). How each scanner's native
+severity is folded into the shared critical/high/medium/low/info scale is
+documented in [severity-mapping.md](severity-mapping.md).
 
 ## Catalog
 

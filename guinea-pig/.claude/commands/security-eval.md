@@ -8,8 +8,10 @@ argument-hint: "[path to scan | 'full'] (default: whole project)"
 Evaluate the security of this project and produce a **prioritized remediation
 plan, grouped so each group becomes one easy-to-review PR**. The scan runs
 server-side on the Deep Scan **jobs infrastructure** (the kruncher fleet); this
-session - *local Claude* - does the prioritization and grouping. This command
-only evaluates and plans; it changes no code. Run `/security-patch` to implement.
+session - *local Claude* - does the **reachability verification**, prioritization
+and grouping (scanners detect patterns; local Claude confirms them in source).
+This command only evaluates and plans; it changes no code. Run `/security-patch`
+to implement.
 
 > **External-address policy (whole suite).** Any request that leaves the machine
 > - in evaluation, demonstration or a non-regression test - must go to a
@@ -63,31 +65,87 @@ only evaluates and plans; it changes no code. Run `/security-patch` to implement
    bash .claude/scripts/fetch_report.sh <N> --format md   > reports/security-report.md
    ```
 
-4. **Group into a remediation plan** (*local Claude*). Read the report and the
-   `analysis` evidence on each finding's `extra` (reachability,
-   `reachable_from_entrypoint`, `entry_kind`, `call_path`, `choke_points`). Use
-   `query_graph` for precise reachability questions when it helps. Then **group
-   the findings by their FIX**, so each group is exactly one reviewable PR:
+4. **Verify reachability before grouping - step back from the pattern**
+   (*local Claude*). A scanner reports a *pattern match* plus a *heuristic* guess
+   at the entry point/taint; it does not know this codebase. Scanners **detect**;
+   this step **confirms**. Before any finding can become a group, confirm or
+   refute it by **reading the code at the scanned commit** (grep the callers, open
+   the sink, trace the source). Do this for every `critical`/`high` and a sample
+   of `medium`; skip only obvious noise families unless they cluster. For each
+   finding answer:
+
+   1. **Exists?** Is the flagged version/line/secret actually present in the
+      *current tree*, or is it stale, mis-resolved, or only in git history?
+   2. **Shipped code?** Is the sink in runtime/library code, or in
+      test / benchmark / example / docs / build-or-maintenance tooling / vendored
+      `externals`? Record which.
+   3. **Really tainted?** Trace the "untrusted input" to its origin. An internal
+      constant, a trusted API response, or a maintainer prompt is **not** attacker
+      input. Note constraints that neuter the pattern (charset, type, length).
+   4. **Reachable trigger?** Is the path driven by an automated / remote /
+      attacker-reachable entry point (server route, CI job, packaging/build hook,
+      import side-effect) - or only by a manual, interactive, privileged operator?
+      Grep the invocation sites; check CI/build wiring. Use `query_graph`
+      (`attack_paths`, `endpoints_reach_sink`, `blast_radius`) to confirm/refute
+      the call path when a manual read is ambiguous, and read the `analysis`
+      evidence on each finding (reachability, `reachable_from_entrypoint`,
+      `entry_kind`, `call_path`, `choke_points`).
+   5. **Already mitigated?** Existing sanitizer / allowlist / checksum / safe API
+      (`tarfile filter="data"`, list-form `subprocess`, parameterized query,
+      cross-host auth stripping, …)?
+
+   Assign each finding a **verdict + one-line evidence (`file:line` + why)**:
+   - `exploitable` - real, reachable, unmitigated → becomes a fix group.
+   - `latent` - real weakness but no current reachable trigger → optional
+     **defense-in-depth** group, labelled as such; do **not** inflate its severity.
+   - `false_positive` - the pattern doesn't hold (source not tainted / already
+     mitigated / artifact absent) → dropped **with evidence**.
+   - `by_design` - documented intended behaviour (e.g. `pickle` model load) →
+     dropped **with evidence**.
+
+   Set an `effective_severity` (may differ from the scanner's) and **prioritise
+   and group on that, not the raw label.** Only `exploitable`/`latent` findings
+   become groups; `false_positive`/`by_design` go to the plan's `dismissed` list -
+   **never silently discarded.**
+
+   For each `exploitable`/`latent` finding also capture a short **impact
+   assessment** that justifies `effective_severity` and tells `/security-patch`
+   what to reproduce at the product level: `exploit_difficulty`
+   (*trivial | moderate | hard* - preconditions, privileges, whether the attacker
+   supplies the input, network position), `affected_parties` (**who supplies the
+   malicious artifact vs. who is harmed** - a library *user* loading an untrusted
+   dataset/model, a *maintainer*/build script, a *CI job*, a *downstream service*),
+   `attack_vector` (how the artifact reaches the sink), and `impact` (CIA + class:
+   RCE / arbitrary write / path traversal / SSRF / info-leak / DoS + blast radius
+   in this product's context).
+
+5. **Group into a remediation plan** (*local Claude*). Taking only the verified
+   `exploitable`/`latent` findings from step 4, **group them by their FIX**, so
+   each group is exactly one reviewable PR:
    - all sinks fixable at one shared helper = one group (e.g. *"parameterize DB
      access in `src/python`"*), not one PR per sink;
    - one group per **direct-dependency CVE** (kind = `dependency`, e.g. *"bump
      `requests` to a fixed version"*);
    - **secrets** get their own group, **report-only** - the fix is removal +
-     rotation, never committing the secret;
-   - drop findings shown unreachable from any entry point; record them as
-     candidate false positives **with the evidence** (do not silently discard).
+     rotation, never committing the secret.
    For each group capture: a short `title`, a `branch` suggestion
-   (`security/<slug>`), `severity` (max of members), `kind`
-   (`code` | `dependency` | `secret` | `config`), the affected `files` and
-   `findings` ids, the recommended `fix` and the single best `fix_location`, and
-   for dependencies the `package` / `current` / `target` versions.
+   (`security/<slug>`), the group `verdict` (`exploitable` | `latent`),
+   `effective_severity` (max of members, post-verification), `kind`
+   (`code` | `dependency` | `secret` | `config`), a one-line `reachability`
+   summary and `evidence` (`file:line` + why) carried from step 4, the `impact`
+   block (`exploit_difficulty` / `affected_parties` / `attack_vector` / `impact`),
+   the affected `files` and `findings` ids, the recommended `fix` and the single
+   best `fix_location`, and for dependencies the `package` / `current` / `target`
+   versions.
 
-5. **Write the plan.** Save `reports/remediation-plan.json` (machine-readable,
+6. **Write the plan.** Save `reports/remediation-plan.json` (machine-readable,
    consumed by `/security-patch`) and `reports/remediation-plan.md` (the human
    review doc), then show the grouped table in chat, ordered by priority
    (risk × ease of fix).
 
-   `remediation-plan.json` shape:
+   `remediation-plan.json` shape (every group carries its step-4 `verdict`,
+   `effective_severity`, `reachability` and `evidence`; dismissed findings are
+   recorded, never dropped):
    ```json
    {
      "groups": [
@@ -95,8 +153,17 @@ only evaluates and plans; it changes no code. Run `/security-patch` to implement
          "id": "g1",
          "title": "Parameterize SQL queries in src/python",
          "branch": "security/sql-injection-src-python",
-         "severity": "high",
+         "verdict": "exploitable",
+         "effective_severity": "high",
          "kind": "code",
+         "reachability": "reachable from POST /search handler (run_query)",
+         "evidence": "src/python/sql_injection.py:41 - request `q` reaches cursor.execute() unsanitized",
+         "impact": {
+           "exploit_difficulty": "trivial",
+           "affected_parties": "victim: anyone whose data is in the DB; attacker: any unauthenticated web client",
+           "attack_vector": "crafted `q` query parameter in an HTTP request to /search",
+           "impact": "SQL injection - read/modify arbitrary rows (confidentiality + integrity); high blast radius"
+         },
          "files": ["src/python/sql_injection.py"],
          "findings": ["GP-SAST-001"],
          "fix": "Use parameterized queries via one shared safe query helper.",
@@ -106,16 +173,33 @@ only evaluates and plans; it changes no code. Run `/security-patch` to implement
          "id": "g2",
          "title": "Bump requests past its known CVE",
          "branch": "security/bump-requests",
-         "severity": "high",
+         "verdict": "exploitable",
+         "effective_severity": "high",
          "kind": "dependency",
+         "reachability": "imported by the request-handling path; version present in deps/requirements.txt",
+         "evidence": "deps/requirements.txt:12 - requests==2.19.1 (CVE-XXXX-YYYY, fixed in 2.32.4)",
          "files": ["deps/requirements.txt"],
          "package": "requests", "current": "2.19.1", "target": "<safe version>",
          "fix": "Bump + migrate API changes + add regression tests."
+       }
+     ],
+     "dismissed": [
+       {
+         "finding": "CWE-502 pickle.loads @ src/ml/estimator_checks.py:2806",
+         "verdict": "by_design",
+         "evidence": "documented model-persistence API; input is a trusted fixture, not remote"
+       },
+       {
+         "finding": "CWE-918 requests.get @ tools/fetch_authors.py:29",
+         "verdict": "latent",
+         "evidence": "URL base hardcoded, source charset-constrained, script is manual/admin-only - no build/CI trigger"
        }
      ]
    }
    ```
 
 ## Output
-The grouped, prioritized plan in chat + `reports/remediation-plan.{json,md}` and
-the scan report in `reports/security-report.{md,json}`. **No code changes.**
+The **verified**, grouped, prioritized plan in chat + `reports/remediation-plan.{json,md}`
+(each group with its `verdict`/`effective_severity`/`reachability`/`evidence`, plus
+the `dismissed` findings and why) and the scan report in
+`reports/security-report.{md,json}`. **No code changes.**

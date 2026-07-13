@@ -106,7 +106,7 @@ services:
       # provisioner can log in. Initial admin password becomes `admin123` - CHANGE
       # IT (and set NEXUS_ADMIN_PASSWORD) for anything internet-adjacent.
       NEXUS_SECURITY_RANDOMPASSWORD: "false"
-      INSTALL4J_ADD_VM_PARAMS: "-Xms1200m -Xmx1200m -XX:MaxDirectMemorySize=1g"
+      INSTALL4J_ADD_VM_PARAMS: "-Xms1200m -Xmx1200m -XX:MaxDirectMemorySize=1g -Djava.util.prefs.userRoot=/nexus-data/javaprefs"
     volumes:
       - nexusdata:/nexus-data
     healthcheck:

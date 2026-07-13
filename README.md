@@ -26,12 +26,17 @@ same `(location, message)` deduplication, and the same four report formats
 
 ## Highlights
 
+- **Agent-driven remediation, not just detection** - an agent drives the MCP
+  server through the whole loop: scan a project, confirm which findings are
+  actually *reachable* (taint + `query_graph` + `reachable-deps`), then open
+  **one review branch per fix group** with a minimal patch and a regression test
+  that proves the issue is closed.
 - **One engine, many front-ends** - CLI, MCP server, REST API + web app and a
   continuous-scanning fleet all run the exact same scanners and report formats.
 - **20+ scanners, one normalized model** - SAST, SCA, secrets, IaC, license,
   malware, DAST and CI/CD pipeline checks, all deduplicated and rendered to
   JSON / Markdown / HTML / SARIF.
-- **Code-graph security analysis** - a deterministic, AI-free `analysis` engine
+- **Code-graph security analysis** - a deterministic, AI-free `analysis` wip engine
   (taint, reachability, choke points) with an **interactive security graph**.
 - **Reachability-aware SCA** - `reachable-deps` cuts CVE noise to dependencies
   that are actually imported and reachable from an entry point.
@@ -68,8 +73,6 @@ continuous-scanning **ASPM fleet (kruncher)**, and a self-serve **web app**. A
 short, screenshot-driven tour of the main functions of each is in
 **[docs/overview.md](docs/overview.md)**.
 
-![](docs/images/user-report.png)
-![](docs/images/user-graph.png)
 ![An agent driving the MCP server - findings triaged into a reachability-checked remediation plan, with a fix and a demonstration per group](docs/images/agent-remediation-plan.png)
 
 *An agent driving the MCP server: findings triaged into a reachability-checked remediation plan.*
@@ -78,6 +81,11 @@ short, screenshot-driven tour of the main functions of each is in
 ![An agent driving the MCP server - brances ](docs/images/agent-mcp-branches.png)  
 
 *An agent driving the MCP server: implementing remediation plan in grouped PR branches for facilitating review*
+
+![](docs/images/user-report.png)
+![](docs/images/user-graph.png)
+
+*The self-serve web app: scan history (every scan, any of the four report formats) and the interactive security graph.*
 
 
 ## Quick start
@@ -159,8 +167,9 @@ ephemeral kind cluster to try it end-to-end.
 | [docs/overview.md](docs/overview.md) | Visual tour of the main functions across the MCP, kruncher/ASPM and web-app surfaces |
 | [docs/architecture.md](docs/architecture.md) | Monorepo layout, two-phase model, adding a scanner, security model, telemetry |
 | [docs/scanners.md](docs/scanners.md) | Full scanner catalog + `analysis`/`ai-analysis`/`codeql`/secrets/`plumber`/`reachable-deps` deep dives |
+| [docs/severity-mapping.md](docs/severity-mapping.md) | How each scanner's native severity is normalized to the shared critical/high/medium/low/info scale, and what each level means |
 | [docs/interfaces.md](docs/interfaces.md) | CLI, MCP server, REST API + web app, CI templates, logging |
-| [mcp-setup.md](mcp-setup.md) | Drop `.claude/` + `.mcp.json` into your own project to drive the MCP server — including pointing `.mcp.json` at a remote server's IP |
+| [docs/mcp-setup.md](docs/mcp-setup.md) | Drop `.claude/` + `.mcp.json` into your own project to drive the MCP server — including pointing `.mcp.json` at a remote server's IP |
 | [docs/deployment.md](docs/deployment.md) | Continuous scanning, Docker Compose, Kubernetes/Kustomize, kind testing, data retention |
 | [docs/sandboxing.md](docs/sandboxing.md) | Isolating untrusted scans: hardening, the Nexus mirror, gVisor/runsc install + verify, the 3-stage sandbox |
 | [docs/development.md](docs/development.md) | Dev setup, tests, the guinea-pig fixtures |
