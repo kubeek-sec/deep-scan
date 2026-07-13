@@ -38,23 +38,16 @@ Prioritise on `effective_severity` (post-verification), not the raw scanner labe
 silently discarded**; `/security-patch` re-checks each group and **skips** any that
 no longer verifies rather than fabricating a fix or a synthetic demo.
 
-## Purpose & limits (read before any demonstration)
-Everything here serves **one purpose only: find vulnerabilities in order to
-remediate them and lock them down with regression tests.** A demonstration is a
-means to that end - it proves a finding is real and seeds a permanent test - and is
-**never** an end in itself, a working exploit, or used for anything else.
-Product-level realism ("elaborate" demos) means driving the real interface with an
-**inert, minimized, sandboxed** artifact whose only observable effect is the branch
-marker or a canary call - it does **not** mean building a weapon. If a finding
-cannot be shown safely, describe its impact in prose and fix it anyway; never
-implement the exploit.
-
-Honor the `/security-patch` **safety contract** throughout: the ONLY allowed
-demonstration side effects are a branch-named `.txt` file or a call to one of the
-controlled `kubeek.com` canary endpoints documented in
-[`.claude/canary-endpoints.md`](../canary-endpoints.md) (via the canary helper
-`canary.sh`/`.ps1`/`.py`, see [`.claude/scripts/README.md`](../scripts/README.md))
-- never any other external host, a real exploit, or a destructive command.
+## Safety & purpose (read before any demonstration)
+One purpose only: **find vulnerabilities to remediate them and lock them down with
+regression tests.** A demonstration proves a finding is real and seeds a permanent
+test - never an end in itself, a working exploit, or anything else. "Product-level"
+realism means driving the real interface with an **inert, minimized, sandboxed**
+artifact whose ONLY observable side effect is a branch-named `.txt` marker or a
+`kubeek.com` canary call (helper `canary.sh`/`.ps1`/`.py`, see
+[`.claude/canary-endpoints.md`](../canary-endpoints.md)) - never another external
+host, a real exploit, or a destructive command. If a finding can't be shown safely,
+describe its impact in prose and fix it anyway.
 
 ## Output
 The evaluation summary + remediation plan, then the list of review branches

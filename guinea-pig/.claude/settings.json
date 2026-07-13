@@ -1,0 +1,66 @@
+{
+  "enabledMcpjsonServers": ["deepscan"],
+  "env": {
+    "MCP_TOOL_TIMEOUT": "1800000",
+    "MCP_TIMEOUT": "60000",
+    "MAX_MCP_OUTPUT_TOKENS": "50000"
+  },
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "mcp__deepscan__static_scan",
+      "mcp__deepscan__scan_family",
+      "mcp__deepscan__query_graph",
+      "mcp__deepscan__list_graph_questions",
+      "mcp__deepscan__list_scanners",
+      "mcp__deepscan__tool_status",
+
+      "Bash(bash .claude/scripts/upload_to_mcp.sh:*)",
+      "Bash(bash .claude/scripts/fetch_report.sh:*)",
+      "Bash(bash .claude/scripts/canary.sh:*)",
+
+      "Bash(curl -fsS http://127.0.0.1:*)",
+
+      "Bash(git status:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+
+      "Bash(jq:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(mkdir:*)",
+      "Bash(diff:*)",
+      "Bash(command -v:*)",
+
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(pytest:*)",
+      "Bash(py_compile:*)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(rm -rf /:*)"
+    ]
+  }
+}

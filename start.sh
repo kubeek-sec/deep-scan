@@ -25,11 +25,13 @@ if [ ! -f "$env_file" ]; then
   cp "deploy/docker/.env.example" "$env_file"
 fi
 
+docker compose --env-file "$env_file" -f "$compose_file" build --no-cache
+
 # No hardcoded --scale: the worker count comes from KRUNCHER_REPLICAS in .env
 # (compose deploy.replicas), so .env stays the single source of truth. Override
 # ad-hoc by passing extra args, e.g. `./start.sh --scale kruncher=8`.
-docker compose --env-file "$env_file" -f "$compose_file" up --build "$@"
+docker compose --env-file "$env_file" -f "$compose_file" up "$@" 
 
-
+docker builder prune -f
 ## Deep-scan ui http://127.0.0.1:8800/
 ## Deep-scan kruncher http://127.0.0.1:8900/

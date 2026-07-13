@@ -6,7 +6,7 @@ so you never need a Python interpreter just to run them:
 | Tool | What it does |
 |---|---|
 | `upload_to_mcp` | zip the project and upload it to the Deep Scan MCP `/upload`; prints `upload_id` |
-| `fetch_report`  | fetch a finished scan's report from the API by job id |
+| `fetch_report`  | fetch a scan's report from the API by **job id or upload_id**; `--wait` polls until the job is `done` (recovery path after `session expired`) |
 | `canary`        | call the controlled kubeek.com canary endpoints (see [../canary-endpoints.md](../canary-endpoints.md)) |
 
 ## Which file to run - try in this order
@@ -23,14 +23,15 @@ The three forms take the **same arguments**, e.g.:
 
 ```text
 upload_to_mcp  [TARGET_DIR] [--base-url URL] [--mcp-config PATH] [--server NAME]
-fetch_report   <JOB_ID> [--format json|md|html|sarif|junit] [--base-url URL]
+fetch_report   <JOB_ID|UPLOAD_ID> [--format json|md|html|sarif|junit] [--wait] [--interval N] [--timeout N] [--base-url URL]
 canary         info [--method GET|POST] | monip | download <f> | direct <f> | download2 <a|b|c>
 ```
 
 (PowerShell uses `-Flag value`; `.sh`/`.py` use `--flag value`. Same names.)
 
-Requirements: `.sh` needs `curl` (plus `zip` for `upload_to_mcp`); `.ps1` needs
-PowerShell 5.1+ (no extra tools); `.py` needs Python 3.9+ (stdlib only).
+Requirements: `.sh` needs `curl` (plus `zip` for `upload_to_mcp`, and `jq` for
+`fetch_report`'s upload_id resolution / `--wait`); `.ps1` needs PowerShell 5.1+ (no
+extra tools); `.py` needs Python 3.9+ (stdlib only).
 
 ## Finding Python for the `.py` fallback
 

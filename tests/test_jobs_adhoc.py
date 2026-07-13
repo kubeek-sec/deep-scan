@@ -124,3 +124,44 @@ def test_adhoc_failure_marks_failed(clean_db):
     with pytest.raises(Exception):
         _run(worker.run_job_inline(job))
     assert store.get_job(job["id"])["status"] == "failed"
+
+
+def test_find_reusable_adhoc_job_dedupes_retries(clean_db):
+    """A retried (identical) submission attaches to the existing job instead of
+    enqueuing a duplicate scan - the fix for MCP timeout-driven double scans."""
+    from deepscan_jobs import db, store
+
+    common = dict(
+        target_type="zip",
+        target="/data/uploads/deadbeef",
+        mode="static",
+        surface="mcp",
+        upload_id="deadbeef",
+    )
+
+    # Nothing enqueued yet -> nothing to reuse.
+    assert store.find_reusable_adhoc_job(**common) is None
+
+    # An in-flight (queued/running) job is always reused, even with done reuse off.
+    queued = store.create_adhoc_job(**common)
+    found = store.find_reusable_adhoc_job(**common, done_within=0)
+    assert found is not None and found["id"] == queued["id"]
+
+    # Different inputs are different scans - never deduped against each other.
+    assert store.find_reusable_adhoc_job(
+        **{**common, "upload_id": "other", "target": "/data/uploads/other"}
+    ) is None
+    assert store.find_reusable_adhoc_job(**common, families=["secrets"]) is None
+
+    # Once done: reused within the window; ignored when the window is 0 (disabled).
+    db.execute(
+        "UPDATE scan_jobs SET status='done', completion=100, finished_at=now() "
+        "WHERE id=%s",
+        (queued["id"],),
+    )
+    assert store.find_reusable_adhoc_job(**common, done_within=900)["id"] == queued["id"]
+    assert store.find_reusable_adhoc_job(**common, done_within=0) is None
+
+    # A failed job is never reused - a genuine re-run must start a fresh scan.
+    db.execute("UPDATE scan_jobs SET status='failed' WHERE id=%s", (queued["id"],))
+    assert store.find_reusable_adhoc_job(**common, done_within=900) is None

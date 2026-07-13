@@ -56,6 +56,21 @@ to implement.
    The tool output names the **job number** (`Job #N`) and a summary; the scan
    also appears in the API dashboard.
 
+   > **Timeout resilience - do NOT re-scan.** A long scan can outlast the MCP
+   > client session (`MCP server "deepscan" session expired`). The scan is a
+   > server-side **job** that keeps running and finishes anyway - treat that error
+   > as EXPECTED, not a failure: **recover the existing job, never re-upload.** One
+   > command resolves the upload, waits for it, and pulls the report:
+   > ```bash
+   > bash .claude/scripts/fetch_report.sh "$UPLOAD_ID" --wait --format json > reports/security-report.json
+   > bash .claude/scripts/fetch_report.sh "$UPLOAD_ID" --wait --format md   > reports/security-report.md
+   > ```
+   > (`fetch_report` takes a `Job #N` *or* an `upload_id`; `--wait` polls until the
+   > job is `done`.) That already satisfies step 3 - continue at step 4. Raising
+   > `MCP_TOOL_TIMEOUT` (`.claude/settings.json`, needs a `claude` restart) widens
+   > the window, but recovery-by-job is the durable fix: a dropped session must
+   > never trigger a fresh scan of the same upload.
+
 3. **Return the report to the requester.** Show the summary (counts by severity
    and family, top findings). Persist it under `reports/`:
    ```bash
@@ -128,15 +143,11 @@ to implement.
      `requests` to a fixed version"*);
    - **secrets** get their own group, **report-only** - the fix is removal +
      rotation, never committing the secret.
-   For each group capture: a short `title`, a `branch` suggestion
-   (`security/<slug>`), the group `verdict` (`exploitable` | `latent`),
-   `effective_severity` (max of members, post-verification), `kind`
-   (`code` | `dependency` | `secret` | `config`), a one-line `reachability`
-   summary and `evidence` (`file:line` + why) carried from step 4, the `impact`
-   block (`exploit_difficulty` / `affected_parties` / `attack_vector` / `impact`),
-   the affected `files` and `findings` ids, the recommended `fix` and the single
-   best `fix_location`, and for dependencies the `package` / `current` / `target`
-   versions.
+   Capture each group with the fields in the schema below: `title`, `branch`
+   (`security/<slug>`), `kind` (`code`|`dependency`|`secret`|`config`), the step-4
+   `verdict` / `effective_severity` (max of members) / `reachability` / `evidence` /
+   `impact`, the affected `files` and `findings`, the `fix` and single best
+   `fix_location`, and for dependencies `package`/`current`/`target`.
 
 6. **Write the plan.** Save `reports/remediation-plan.json` (machine-readable,
    consumed by `/security-patch`) and `reports/remediation-plan.md` (the human

@@ -51,6 +51,7 @@ from typing import Any
 from deepscan_core import Family, Mode, install, registry
 from deepscan_core.analysis import QUESTIONS, answer, security_payload
 from deepscan_core.config import get as _config_get
+from deepscan_core.log import get_logger
 from deepscan_core.reporting import render, render_triage_console
 from deepscan_core.targets import TargetError
 from deepscan_core.validation import ScanTargetError, resolve_scan_dir
@@ -58,9 +59,11 @@ from deepscan_jobs import config as jobs_config
 from deepscan_jobs import store as jobs_store
 from deepscan_jobs import uploads as jobs_uploads
 from deepscan_jobs import worker as jobs_worker
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 mcp = FastMCP("deepscan")
+
+_log = get_logger("mcp")
 
 # The active transport, set in main(). Tools branch on it to decide whether a
 # server-side path is acceptable (stdio: always; http: only when allowed).
@@ -191,19 +194,84 @@ def _scan_timeout(default: int = 1800) -> int:
     return default
 
 
+def _dedupe_window(default: int = 900) -> int:
+    """Seconds within which a re-submitted scan attaches to a just-finished job.
+
+    A blocking scan tool can outlast the MCP client's per-call timeout; the client
+    then re-sends the *same* request while the original job is still running - or
+    has just finished - which would otherwise enqueue a duplicate scan of the same
+    (immutable) upload. Within this window we reuse the prior ``done`` job's report
+    instead. In-flight (queued/running) jobs are always reused regardless of this
+    window; set ``DEEPSCAN_MCP_DEDUPE_WINDOW=0`` to disable done-job reuse."""
+    raw = _config_get("DEEPSCAN_MCP_DEDUPE_WINDOW")
+    if raw is not None and str(raw).strip() != "":
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return default
+
+
+def _inline_report() -> bool:
+    """Whether the full Markdown report is embedded in the tool result.
+
+    Default true (back-compat). Set ``DEEPSCAN_MCP_INLINE_REPORT=false`` to return
+    a compact acknowledgement (job id + summary + how to fetch) instead of a
+    multi-hundred-KB blob - lighter to stream and immune to output-token caps; the
+    full report is still on disk and via the API."""
+    return (_config_get("DEEPSCAN_MCP_INLINE_REPORT") or "true").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+
+
+def _fetch_hint(job_id: int) -> str:
+    """One-line pointer to pull the full report by job id (compact-return mode)."""
+    return (
+        f"Full report not inlined (DEEPSCAN_MCP_INLINE_REPORT=false). Fetch it by "
+        f"job id, e.g. GET /api/scans/{job_id}/report?format=md or "
+        f"`fetch_report.sh {job_id}`.\n"
+    )
+
+
 _TERMINAL = {"done", "failed", "dead", "cancelled", "superseded"}
 
 
-async def _await_job(job_id: int, *, timeout: int, poll: float = 2.0) -> dict[str, Any] | None:
+async def _await_job(
+    job_id: int, *, timeout: int, poll: float = 2.0, ctx: Context | None = None
+) -> dict[str, Any] | None:
     """Poll a queued job until it reaches a terminal state or ``timeout``.
+
+    When a FastMCP ``ctx`` is given, emit a progress notification each poll (plus a
+    log line every ~15s). Over the http transport this keeps the otherwise-idle MCP
+    session alive during a long scan - without it the session expires before the
+    report is returned (`MCP server "deepscan" session expired`) - and gives the
+    caller live % / stage feedback.
 
     Returns the latest job row (which may still be queued/running on timeout), or
     ``None`` if the job disappeared."""
     deadline = time.monotonic() + timeout
+    last_log = 0.0
     while True:
         job = await asyncio.to_thread(jobs_store.get_job, job_id)
         if job is None or job["status"] in _TERMINAL:
             return job
+        if ctx is not None:
+            pct = float(job.get("completion") or 0)
+            stage = job.get("stage") or job["status"]
+            # A dropped notification must never abort a scan.
+            try:
+                await ctx.report_progress(
+                    progress=pct, total=100.0, message=f"job #{job_id}: {stage}"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            now = time.monotonic()
+            if now - last_log >= 15:
+                last_log = now
+                try:
+                    await ctx.info(f"scan job #{job_id}: {stage} ({pct:.0f}%)")
+                except Exception:  # noqa: BLE001
+                    pass
         if time.monotonic() >= deadline:
             return job
         await asyncio.sleep(poll)
@@ -235,6 +303,8 @@ def _format_report_from_disk(job: dict[str, Any], *, with_graph_report: bool) ->
         f"Summary: {json.dumps(summary, default=str)}\n\n"
     )
     header += _source_line(job.get("source_path"), job.get("upload_id"))
+    if not _inline_report():
+        return header + _fetch_hint(jid)
     body = _read_text(report_dir / "report.md") or "_No markdown report on disk._"
     triage_md = _read_text(report_dir / "triage.md")
     if triage_md:
@@ -260,6 +330,7 @@ async def _run_job(
     families: list[Family] | None = None,
     scanners: list[str] | None = None,
     with_graph_report: bool = True,
+    ctx: Context | None = None,
 ) -> str:
     """Create an ad-hoc job and return its report (plus the graph report for
     family/full scans). Runs on the kruncher fleet or inline per
@@ -270,13 +341,28 @@ async def _run_job(
     fam_values = [f.value for f in families] if families else None
 
     if _run_via_kruncher():
-        # Enqueue on the manual queue; the fleet runs it (ahead of periodic work).
-        job = jobs_store.create_adhoc_job(
+        # Idempotency: a blocking scan tool can outlast the client's per-call
+        # timeout, so the client may resend the identical request. Attach to the
+        # still-running (or just-finished) job instead of enqueuing a duplicate
+        # scan of the same upload; only then enqueue a fresh one.
+        job = jobs_store.find_reusable_adhoc_job(
             target_type=target_type, target=target, mode=mode.value,
             families=fam_values, scanners=scanners, surface="mcp",
-            upload_id=upload_id,
+            upload_id=upload_id, done_within=_dedupe_window(),
         )
-        final = await _await_job(job["id"], timeout=_scan_timeout())
+        if job is not None:
+            _log.info(
+                "reusing existing adhoc job #%s (status=%s) for a duplicate "
+                "%s submission of %s", job["id"], job["status"], mode.value, target,
+            )
+        else:
+            # Enqueue on the manual queue; the fleet runs it (ahead of periodic work).
+            job = jobs_store.create_adhoc_job(
+                target_type=target_type, target=target, mode=mode.value,
+                families=fam_values, scanners=scanners, surface="mcp",
+                upload_id=upload_id,
+            )
+        final = await _await_job(job["id"], timeout=_scan_timeout(), ctx=ctx)
         if final is None:
             return f"Scan job #{job['id']} disappeared from the queue."
         status = final["status"]
@@ -309,6 +395,8 @@ async def _run_job(
     )
     prov = report.provenance or {}
     header += _source_line(prov.get("source_path"), prov.get("upload_id"))
+    if not _inline_report():
+        return header + _fetch_hint(job["id"])
     body = render(report, "md")
     if report.triage:
         header += "Triage report (json/md/html) also written.\n\n"
@@ -327,7 +415,9 @@ async def _run_job(
 
 
 @mcp.tool()
-async def static_scan(project_dir: str | None = None, upload_id: str | None = None) -> str:
+async def static_scan(
+    project_dir: str | None = None, upload_id: str | None = None, ctx: Context | None = None
+) -> str:
     """Run all static scanners (SAST, SCA, secrets, IaC, license, pipeline) over
     a project, deduplicate, and return a Markdown report plus the graph report.
 
@@ -335,18 +425,18 @@ async def static_scan(project_dir: str | None = None, upload_id: str | None = No
     ``upload_id`` (or set DEEPSCAN_MCP_ALLOW_LOCAL_PATHS to use ``project_dir``)."""
     try:
         return await _run_job(
-            mode=Mode.STATIC, project_dir=project_dir, upload_id=upload_id
+            mode=Mode.STATIC, project_dir=project_dir, upload_id=upload_id, ctx=ctx
         )
     except (ScanTargetError, ValueError) as exc:
         return f"Error: {exc}"
 
 
 @mcp.tool()
-async def dynamic_scan(target_url: str) -> str:
+async def dynamic_scan(target_url: str, ctx: Context | None = None) -> str:
     """Run all dynamic (DAST) scanners against a running http(s) target URL,
     deduplicate, and return a Markdown report."""
     try:
-        return await _run_job(mode=Mode.DYNAMIC, target_url=target_url)
+        return await _run_job(mode=Mode.DYNAMIC, target_url=target_url, ctx=ctx)
     except (ScanTargetError, ValueError) as exc:
         return f"Error: {exc}"
 
@@ -357,6 +447,7 @@ async def scan_family(
     project_dir: str | None = None,
     upload_id: str | None = None,
     target_url: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """Run only the scanners of one family, returning the report plus graph report.
 
@@ -376,6 +467,7 @@ async def scan_family(
             upload_id=upload_id,
             target_url=target_url,
             families=fams,
+            ctx=ctx,
         )
     except (ScanTargetError, ValueError) as exc:
         return f"Error: {exc}"
@@ -387,6 +479,7 @@ async def scan_with(
     project_dir: str | None = None,
     upload_id: str | None = None,
     target_url: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """Run a single named scanner and return that scanner's report. Use
     list_scanners to see available names. Static scanners: pass ``project_dir``
@@ -400,6 +493,7 @@ async def scan_with(
             target_url=target_url,
             scanners=[scanner],
             with_graph_report=False,
+            ctx=ctx,
         )
     except (ScanTargetError, ValueError) as exc:
         return f"Error: {exc}"

@@ -111,6 +111,59 @@ def enqueue_scan(
 # --------------------------------------------------------------------------- #
 
 
+def find_reusable_adhoc_job(
+    *,
+    target_type: str,
+    target: str,
+    mode: str | None = None,
+    families: list[str] | None = None,
+    scanners: list[str] | None = None,
+    surface: str | None = None,
+    upload_id: str | None = None,
+    done_within: float = 900.0,
+) -> dict[str, Any] | None:
+    """Return a recent ad-hoc job a *duplicate* submission can attach to, or None.
+
+    Idempotency for retried API/MCP submissions. A scan tool that blocks until the
+    job finishes can outlast the client's per-call timeout; the client then resends
+    the identical request while the first job is still running - or has just
+    finished - which would otherwise enqueue a second scan of the same inputs. We
+    reuse a job with the same (surface, target_type, target, mode, families,
+    scanners, upload_id) that is either still in-flight (queued/running), or that
+    finished successfully within ``done_within`` seconds (the uploaded target is
+    immutable, so its report still applies). Failed/dead/cancelled/superseded jobs
+    are never reused, so a genuine re-run after a failure still starts fresh. Pass
+    ``done_within=0`` to reuse only in-flight jobs.
+
+    Best-effort, not a hard lock: two truly simultaneous submits could both miss
+    and each insert. It closes the common sequential-retry gap, not every race.
+    """
+    return db.fetchone(
+        """
+        SELECT * FROM scan_jobs
+        WHERE origin = 'adhoc'
+          AND surface IS NOT DISTINCT FROM %s
+          AND target_type IS NOT DISTINCT FROM %s
+          AND target = %s
+          AND mode IS NOT DISTINCT FROM %s
+          AND upload_id IS NOT DISTINCT FROM %s
+          AND families = %s::text[]
+          AND scanners = %s::text[]
+          AND (
+                status IN ('queued', 'running')
+             OR (status = 'done'
+                 AND finished_at > now() - make_interval(secs => %s))
+          )
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (
+            surface, target_type, target, mode, upload_id,
+            families or [], scanners or [], float(done_within),
+        ),
+    )
+
+
 def create_adhoc_job(
     *,
     target_type: str,
