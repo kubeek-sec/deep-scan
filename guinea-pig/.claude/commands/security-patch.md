@@ -77,7 +77,7 @@ For each selected group, starting from a clean working tree on the default branc
      crafted file and observe the product's behaviour.*
    - **L2 - public API:** drive the documented public entry point a downstream
      user calls - a dataset/model/file **loader**, a parser, an exporter - passing
-     a **forged artifact** (crafted archive / dataset / model / file) that trips
+     a **forged artifact** (crafted archive / requests / dataset / model / file) that trips
      the sink. *e.g. `datasets.load_*` / `load_svmlight_file` / model
      deserialization on attacker-shaped bytes.*
    - **L1 - unit (fallback only):** call the sink directly. Use ONLY when there is
