@@ -25,19 +25,27 @@ def resolve_scan_dir(raw: str) -> Path:
     raw = raw.strip()
     if raw.startswith("-"):
         raise ScanTargetError("Scan target may not start with '-'.")
-    path = Path(os.path.abspath(os.path.expanduser(raw)))
-    if not path.exists():
-        raise ScanTargetError(f"Scan target does not exist: {path}")
-    if not path.is_dir():
-        raise ScanTargetError(f"Scan target is not a directory: {path}")
+
     root = config.scan_root()
-    if root is not None:
-        real = path.resolve()
-        if real != root and root not in real.parents:
-            raise ScanTargetError(
-                f"Scan target {real} is outside the configured scan root {root}."
-            )
-    return path
+    if root is None:
+        raise ScanTargetError("Local path targets require a configured scan root.")
+
+    candidate = Path(os.path.expanduser(raw))
+    if not candidate.is_absolute():
+        candidate = root / candidate
+
+    try:
+        real = candidate.resolve(strict=True)
+    except OSError:
+        raise ScanTargetError(f"Scan target does not exist: {candidate}") from None
+
+    if real != root and root not in real.parents:
+        raise ScanTargetError(
+            f"Scan target {real} is outside the configured scan root {root}."
+        )
+    if not real.is_dir():
+        raise ScanTargetError(f"Scan target is not a directory: {real}")
+    return real
 
 
 def validate_target_url(raw: str, *, allow_private: bool = True) -> str:
