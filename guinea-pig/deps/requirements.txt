@@ -1,7 +1,7 @@
 # SCA module - manifest only, NEVER installed.
 # Every pin below is an old version with known CVEs so SCA scanners fire.
 # Expected detecting family: sca
-requests==2.19.1
+requests==2.33.0
 flask==0.12.2
 pyyaml==5.3.1
 django==2.2.0
