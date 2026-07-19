@@ -2,8 +2,7 @@
   "mcpServers": {
     "deepscan": {
       "type": "http",
-      "url": "http://127.0.0.1:8000/mcp",
-      "timeout": 1800000
+      "url": "http://127.0.0.1:8000/mcp"
     }
   }
 }

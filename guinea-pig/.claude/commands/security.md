@@ -19,7 +19,11 @@ Do the complete security workflow in one go.
    the issue and **demonstrating it at the product level** (drive the real
    API/CLI/app with a forged-but-inert, sandboxed artifact - not just an import),
    with an **impact assessment** (difficulty / who's affected / vector / impact);
-   direct-dependency CVEs bumped iteratively with code migration + tests.
+   direct-dependency CVEs bumped iteratively with code migration + tests (to a
+   verified-real, non-vulnerable target). Before committing each group, **confirm
+   the fix**: it is complete and adds no new weakness, the existing tests still
+   pass (behavior preserved), and a **re-scan of the patched scope comes back
+   clean** (finding gone, nothing new).
 
 ## Verdict vocabulary (shared by both phases)
 Scanners **detect** patterns; this workflow **confirms** them in source before any

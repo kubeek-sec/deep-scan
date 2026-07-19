@@ -140,7 +140,10 @@ to implement.
    - all sinks fixable at one shared helper = one group (e.g. *"parameterize DB
      access in `src/python`"*), not one PR per sink;
    - one group per **direct-dependency CVE** (kind = `dependency`, e.g. *"bump
-     `requests` to a fixed version"*);
+     `requests` to a fixed version"*). Set `target` to a **real, published**
+     release of the same package that clears the CVE and is not itself vulnerable
+     or yanked - prefer the **lowest** such version, never a guessed or
+     typosquatted name (`/security-patch` re-verifies this before bumping);
    - **secrets** get their own group, **report-only** - the fix is removal +
      rotation, never committing the secret.
    Capture each group with the fields in the schema below: `title`, `branch`

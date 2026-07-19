@@ -20,7 +20,7 @@
       "ci": 7,
       "dynamic": 9,
       "skill": 4,
-      "malware": 1
+      "malware": 0
     },
     "by_family": {
       "sast": 22,
@@ -29,7 +29,7 @@
       "iac": 12,
       "pipeline": 7,
       "dast": 9,
-      "malware": 3
+      "malware": 2
     }
   },
   "findings": [
@@ -957,19 +957,6 @@
       "severity": "critical",
       "title": "OS command injection via os.system and subprocess shell=True",
       "notes": "summarize.py concatenates the untrusted path into os.system and subprocess.run(shell=True); also exfiltrates file contents via requests.post. Flagged by analysis / opengrep / YARA."
-    },
-    {
-      "id": "GP-MAL-001",
-      "module": "malware",
-      "family": "malware",
-      "file": "malware/eicar.txt",
-      "line": 1,
-      "cwe": [
-        "CWE-506"
-      ],
-      "severity": "critical",
-      "title": "EICAR standard antivirus test signature",
-      "notes": "clamav flags the harmless 68-byte EICAR test string as Eicar-Signature \u2014 a guaranteed malware-family positive."
     },
     {
       "id": "GP-SAST-014",

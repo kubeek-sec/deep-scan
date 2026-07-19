@@ -150,12 +150,19 @@ For each selected group, starting from a clean working tree on the default branc
 
 5. **Dependency bump** (`kind` = `dependency`) - do it **iteratively, one commit
    per step**, so the migration is reviewable:
-   a. *commit 1* - bump the direct dependency in the manifest
+   a. *verify the target first* - before touching the manifest, confirm the
+      `target` is a **real, published** release of the **same** package (exact
+      name - guard against hallucinated / typosquatted names), that it is not
+      yanked or deprecated, and that it does **not** carry its own known CVE
+      (never bump into another vuln). Prefer the **lowest** version that clears
+      the CVE. If the target can't be verified, **stop and report** - never
+      invent or guess a version.
+   b. *commit 1* - bump the direct dependency in the manifest
       (`deps/requirements.txt` / `deps/package.json`) from `current` → `target`.
-   b. *commit 2* - **migrate the code** that breaks under the new version: grep
+   c. *commit 2* - **migrate the code** that breaks under the new version: grep
       the repo for usages of the package and adapt to renamed/removed APIs,
       changed signatures or defaults.
-   c. *commit 3* - **add the missing tests** that pin the prior behavior, so the
+   d. *commit 3* - **add the missing tests** that pin the prior behavior, so the
       bump is proven non-breaking. **Verify install-free** (nothing on the host):
       run them inside a **Docker** image built with the bumped dependency; if that
       isn't feasible, fall back to a **static check** (assert the manifest/lock now
@@ -164,11 +171,30 @@ For each selected group, starting from a clean working tree on the default branc
    If a safe target needs intermediate versions, hop version-by-version, each
    with its own migrate + test commits.
 
-6. **Commit** the fix + demo with a clear message
+6. **Confirm the fix - complete, behavior-preserving, and clean.** Before
+   committing, self-check the remediation *itself* - an AI fix can *fail to
+   remediate*, *partially* fix, or *introduce a new* weakness:
+   - **Complete & no new vuln.** The fix covers **every** sink and bypass shape in
+     the group, not a subset, and introduces no new weakness (a bypassable
+     sanitizer, a broadened surface, a fresh sink). If it only covers part, widen
+     it or split the group - never ship a partial fix as done.
+   - **Behavior-preserving.** The fix must not change **intended** behavior: run
+     the touched module's **existing** tests (sandboxed / Docker, install-free per
+     the safety contract) and confirm they still pass - this is distinct from the
+     security guard of step 4. If none exist, reason about the behavior delta in
+     prose. (Dependency bumps already run the suite in step 5d.)
+   - **Re-scan clean.** Re-scan the patched scope through the same MCP jobs infra
+     (`scan_family` on the affected family, or `static_scan` on the affected
+     files) and confirm the group's finding is **gone** and **no new finding** was
+     introduced vs. the `/security-eval` baseline report
+     (`reports/security-report.json`). Record the before/after counts; if a new
+     finding appears, treat it as part of this group and fix it before commit.
+
+7. **Commit** the fix + demo with a clear message
    (`fix(security): <group title>`), then switch back to the default branch for
    the next group.
 
-7. Leave each branch **for review** - do **not** merge. Push or open a PR only if
+8. Leave each branch **for review** - do **not** merge. Push or open a PR only if
    the user explicitly asks; otherwise the local branches are ready for the
    developer to review and turn into PRs.
 
@@ -184,7 +210,9 @@ A short report - per group: the step-1 verification result (`verified` +
 level used (L1/L2/L3) and how it was made inert/sandboxed** (and, if a scenario was
 built, the `tests/<branch-slug>/` dir - Docker + `readme.md`), the **impact
 assessment** (`exploit_difficulty` / `affected_parties` / `attack_vector` /
-`impact`), and (for dependency bumps) the version delta + tests added - followed by
+`impact`), the **step-6 confirm-fix result** (existing tests still pass +
+**re-scan before/after counts** showing the finding gone and nothing new), and
+(for dependency bumps) the version delta + tests added - followed by
 the list of branches the developer should review. Groups skipped as
 `verified: false` (already fixed / false positive / by-design) are listed with
 their evidence, not silently omitted.

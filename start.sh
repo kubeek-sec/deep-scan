@@ -32,6 +32,10 @@ docker compose --env-file "$env_file" -f "$compose_file" build --no-cache
 # ad-hoc by passing extra args, e.g. `./start.sh --scale kruncher=8`.
 docker compose --env-file "$env_file" -f "$compose_file" up "$@" 
 
-docker builder prune -f
+docker builder prune -f -a
+docker image prune -f
+docker volume prune -f
+docker container prune -f
+docker system df
 ## Deep-scan ui http://127.0.0.1:8800/
 ## Deep-scan kruncher http://127.0.0.1:8900/
